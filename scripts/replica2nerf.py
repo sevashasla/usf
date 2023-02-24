@@ -8,6 +8,7 @@ import yaml
 import os
 import math
 import json
+from tqdm import trange
 
 
 class Replica2NGP:
@@ -68,7 +69,7 @@ class Replica2NGP:
 
         totw = 0.0
         totp = np.array([0.0, 0.0, 0.0])
-        for i in range(N):
+        for i in trange(N):
             mf = poses[i, :3, :]
             for j in range(i + 1, N):
                 mg = poses[j, :3, :]
@@ -124,7 +125,7 @@ class Replica2NGP:
         for i in range(len(poses)):
             frames_item = {}
             frames_item["file_path"] = f"rgb/rgb_{i}.png"
-            frames_item["semantic_path"] = f"semantic/semantic_class_{i}.png"
+            frames_item["semantic_path"] = f"semantic_class/semantic_class_{i}.png"
             frames_item["transform_matrix"] = poses[i].tolist()
             result["frames"].append(frames_item)
             
@@ -141,6 +142,8 @@ def main():
     parser.add_argument("--out_file", type=str, help='path to output file')
     parser.add_argument("--config_file", type=str, help='path to config file')
     args = parser.parse_args()
+    print("[INFO] replica2nerf.py with parameters:")
+    print(args)
     r2n = Replica2NGP(args)
     r2n.transform()
 

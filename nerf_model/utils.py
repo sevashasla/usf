@@ -494,9 +494,8 @@ class Trainer(object):
 
         images = data['images'] # [B, N, 3/4]
         semantic_images = data['semantic_images']
-
         B, N, C = images.shape
-        SC = semantic_images.shape[-1] # number of semantic classes
+        SC = self.model.num_semantic_classes # number of semantic classes
 
         if self.opt.color_space == 'linear':
             images[..., :3] = srgb_to_linear(images[..., :3])
@@ -520,11 +519,12 @@ class Trainer(object):
         # outputs = self.model.render(rays_o, rays_d, staged=False, bg_color=bg_color, perturb=True, force_all_rays=True, **vars(self.opt))
     
         pred_rgb = outputs['image']
-        pred_smntc = outputs['semantic_images']
+        pred_smntc = outputs['semantic_image']
 
         # MSE loss
         loss = self.criterion(pred_rgb, gt_rgb).mean(-1) # [B, N, 3] --> [B, N]
-        # TODO: CrossEntropyLoss
+        # CrossEntropyLoss
+
         loss_ce = self.criterion_semantic(pred_smntc.view(B * N, SC), gt_smntc.view(B * N)) # scalar
 
         # patch-based rendering
@@ -584,7 +584,7 @@ class Trainer(object):
         images = data['images'] # [B, H, W, 3/4]
         semantic_images = data['semantic_images'] # [B, H, W]
         B, H, W, C = images.shape
-        SC = semantic_images.shape[-1]
+        SC = self.model.num_semantic_classes
 
         if self.opt.color_space == 'linear':
             images[..., :3] = srgb_to_linear(images[..., :3])
@@ -894,7 +894,7 @@ class Trainer(object):
             self.optimizer.zero_grad()
 
             with torch.cuda.amp.autocast(enabled=self.fp16):
-                preds, truths, loss = self.train_step(data)
+                preds, truths, preds_smntc, gt_smntc, loss = self.train_step(data)
          
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)

@@ -87,13 +87,13 @@ if __name__ == '__main__':
     # semantic_params = 
 
     criterion = torch.nn.MSELoss(reduction='none')
+    criterion_semantic = torch.nn.CrossEntropyLoss()
     #criterion = partial(huber_loss, reduction='none')
     #criterion = torch.nn.HuberLoss(reduction='none', beta=0.1) # only available after torch 1.10 ?
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     if opt.test:
-        
         model = NeRFNetwork(
             encoding="hashgrid",
             bound=opt.bound,
@@ -106,7 +106,13 @@ if __name__ == '__main__':
         )
 
         metrics = [PSNRMeter(), LPIPSMeter(device=device)]
-        trainer = Trainer('ngp', opt, model, device=device, workspace=opt.workspace, criterion=criterion, fp16=opt.fp16, metrics=metrics, use_checkpoint=opt.ckpt)
+        trainer = Trainer(
+            'ngp', opt, model, 
+            device=device, workspace=opt.workspace, 
+            criterion=criterion, 
+            criterion_semantic=criterion_semantic, 
+            fp16=opt.fp16, metrics=metrics, 
+            use_checkpoint=opt.ckpt)
 
         if opt.gui:
             gui = NeRFGUI(opt, trainer)
@@ -115,6 +121,7 @@ if __name__ == '__main__':
     else:
 
         nerf_dataset = NeRFDataset(opt, device=device, type='train')
+
         num_semantic_classes = nerf_dataset.num_semantic_classes     
         train_loader = nerf_dataset.dataloader()
 
@@ -128,7 +135,7 @@ if __name__ == '__main__':
             bg_radius=opt.bg_radius,
             num_semantic_classes=num_semantic_classes,
         )
-        
+
         print(model)
 
         optimizer = lambda model: torch.optim.Adam(model.get_params(opt.lr), betas=(0.9, 0.99), eps=1e-15)
@@ -137,21 +144,32 @@ if __name__ == '__main__':
         scheduler = lambda optimizer: optim.lr_scheduler.LambdaLR(optimizer, lambda iter: 0.1 ** min(iter / opt.iters, 1))
 
         metrics = [PSNRMeter(), LPIPSMeter(device=device)]
-        trainer = Trainer('ngp', opt, model, device=device, workspace=opt.workspace, optimizer=optimizer, criterion=criterion, ema_decay=0.95, fp16=opt.fp16, lr_scheduler=scheduler, scheduler_update_every_step=True, metrics=metrics, use_checkpoint=opt.ckpt, eval_interval=50)
+
+        trainer = Trainer(
+            'ngp', opt, model, 
+            device=device, workspace=opt.workspace, 
+            optimizer=optimizer, 
+            criterion=criterion, 
+            criterion_semantic=criterion_semantic, 
+            ema_decay=0.95, fp16=opt.fp16, 
+            lr_scheduler=scheduler, scheduler_update_every_step=True, 
+            metrics=metrics, use_checkpoint=opt.ckpt, 
+            eval_interval=50)
+
 
         if opt.gui:
             gui = NeRFGUI(opt, trainer, train_loader)
             gui.render()
         
         else:
-            valid_loader = NeRFDataset(opt, device=device, type='val', downscale=1).dataloader()
+            valid_loader = NeRFDataset(opt, device=device, type='val', downscale=1, semantic_remap=nerf_dataset.semantic_remap).dataloader()
 
             max_epoch = np.ceil(opt.iters / len(train_loader)).astype(np.int32)
-            print(f"MAX_EPOCH: {max_epoch}")
+            print(f"[INFO] MAX_EPOCH: {max_epoch}")
             trainer.train(train_loader, valid_loader, max_epoch)
 
             # also test
-            test_loader = NeRFDataset(opt, device=device, type='test').dataloader()
+            test_loader = NeRFDataset(opt, device=device, type='test', semantic_remap=nerf_dataset.semantic_remap).dataloader()
             
             if test_loader.has_gt:
                 trainer.evaluate(test_loader) # blender has gt, so evaluate it.

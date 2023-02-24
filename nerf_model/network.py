@@ -110,7 +110,7 @@ class NeRFNetwork(NeRFRenderer):
                     out_dim = self.num_semantic_classes
                 else:
                     out_dim = self.hidden_dim_semantic
-            semantic_net.append(nn.Linear(in_dim, out_dim, bias=False))
+                semantic_net.append(nn.Linear(in_dim, out_dim, bias=False))
             self.semantic_net = nn.ModuleList(semantic_net)
         else:
             raise Exception("Should use semantic here")
@@ -226,18 +226,17 @@ class NeRFNetwork(NeRFRenderer):
         # mask: [N,], bool, indicates where we actually needs to compute rgb.
 
         if mask is not None:
-            smntc = torch.zeros(mask.shape[0], 3, dtype=x.dtype, device=x.device) # [N, 3]
+            smntc = torch.zeros(mask.shape[0], self.num_semantic_classes, dtype=x.dtype, device=x.device) # [N, SC]
             # in case of empty mask
             if not mask.any():
                 return smntc
             x = x[mask]
-            d = d[mask]
             geo_feat = geo_feat[mask]
 
         h = geo_feat
         for l in range(self.num_layers_semantic):
             h = self.semantic_net[l](h)
-            if l != self.num_layers_color - 1:
+            if l != self.num_layers_semantic - 1:
                 h = F.relu(h, inplace=True)
 
         if mask is not None:

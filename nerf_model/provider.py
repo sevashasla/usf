@@ -13,6 +13,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from .utils import get_rays
+from .semantic_utils import SemanticRemap
 
 
 # ref: https://github.com/NVlabs/instant-ngp/blob/b76004c8cf478880227401ae763be4c02f80b62f/include/neural-graphics-primitives/nerf_loader.h#L50
@@ -92,7 +93,7 @@ def rand_poses(size, device, radius=1, theta_range=[np.pi/3, 2*np.pi/3], phi_ran
 
 
 class NeRFDataset:
-    def __init__(self, opt, device, type='train', downscale=1, n_test=10):
+    def __init__(self, opt, device, type='train', downscale=1, n_test=10, semantic_remap=None):
         super().__init__()
         
         self.opt = opt
@@ -110,6 +111,12 @@ class NeRFDataset:
         self.num_rays = self.opt.num_rays if self.training else -1
 
         self.rand_pose = opt.rand_pose
+
+        if semantic_remap is None:
+            self.semantic_remap = SemanticRemap()
+        else:
+            self.semantic_remap = semantic_remap
+            self.num_semantic_classes = len(self.semantic_remap.semantic_classes)
 
         # auto-detect transforms.json and split mode.
         if os.path.exists(os.path.join(self.root_path, 'transforms.json')):
@@ -174,6 +181,7 @@ class NeRFDataset:
 
             self.poses = []
             self.images = None
+            self.semantic_images = None
             for i in range(n_test + 1):
                 ratio = np.sin(((i / n_test) - 0.5) * np.pi) * 0.5 + 0.5
                 pose = np.eye(4, dtype=np.float32)
@@ -226,7 +234,7 @@ class NeRFDataset:
                 ### semantic read
                 semantic = cv2.imread(semantic_path, cv2.IMREAD_UNCHANGED)
                 if semantic.shape[0] != self.H or semantic.shape[1] != self.W:
-                    semantic = cv2.resize(semantic, (self.W, self.H), interpolation=cv2.INTER_AREA)
+                    semantic = cv2.resize(semantic, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
 
                 self.poses.append(pose)
                 self.images.append(image)
@@ -234,18 +242,13 @@ class NeRFDataset:
             
         self.poses = torch.from_numpy(np.stack(self.poses, axis=0)) # [N, 4, 4]
         if self.images is not None:
-            self.images = torch.from_numpy(np.stack(self.images, axis=0)) # [N, H, W, C]
             self.semantic_images = torch.from_numpy(np.stack(self.semantic_images, axis=0)) # [N, H, W]
         
         # make semantic remap
-        semantic_classes = np.unique(self.semantic_images)
-        semantic_classes_remap = dict(zip(semantic_classes, np.arange(len(semantic_classes))))
-        print("semantic remap:")
-        print(*[f"{k}: {v}" for (k, v) in semantic_classes_remap.items()], sep='\n')
-        self.num_semantic_classes = len(semantic_classes)
-        # remap semantic classes
-        for c, remap_c in semantic_classes_remap:
-            self.semantic_images[self.semantic_images == c] = remap_c
+        if self.semantic_images is not None:
+            self.images = torch.from_numpy(np.stack(self.images, axis=0)) # [N, H, W, C]
+            self.semantic_remap.remap(self.semantic_images, inplace=True)
+            self.num_semantic_classes = len(self.semantic_remap.semantic_classes)
         
         # calculate mean radius of all camera poses
         self.radius = self.poses[:, :3, 3].norm(dim=-1).mean(0).item()
@@ -334,14 +337,13 @@ class NeRFDataset:
         if self.images is not None:
             images = self.images[index].to(self.device) # [B, H, W, 3/4]
             if self.training:
-                C = images.shape[-1]
+                C = images.shape[-1] # 3/4
                 images = torch.gather(images.view(B, -1, C), 1, torch.stack(C * [rays['inds']], -1)) # [B, N, 3/4]
             results['images'] = images
 
             semantic_images = self.semantic_images[index].to(self.device)
             if self.training:
-                C = semantic_images.shape[-1]
-                semantic_images = torch.gather(semantic_images.view(B, -1, C), 1, torch.stack(C * [rays['inds']], -1)) # [B, N, 3/4]
+                semantic_images = torch.gather(semantic_images.view(B, -1), 1, rays['inds']) # [B, N]
             results['semantic_images'] = semantic_images
 
         

@@ -218,7 +218,7 @@ class NeRFRenderer(nn.Module):
         mask = weights > 1e-4 # hard coded
         rgbs = self.color(xyzs.reshape(-1, 3), dirs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
         rgbs = rgbs.view(N, -1, 3) # [N, T+t, 3]
-        smntc = self.semantic_pred(xyzs.reshape(-1, 3), dirs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
+        smntc = self.semantic_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
         smntc = smntc.view(N, -1, self.num_semantic_classes) # [N, T+t, SC]
 
         #print(xyzs.shape, 'valid_rgb:', mask.sum().item())
