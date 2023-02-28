@@ -12,7 +12,7 @@ import trimesh
 import torch
 from torch.utils.data import DataLoader
 
-from .utils import get_rays
+from .utils import get_rays, tm
 from .semantic_utils import SemanticRemap
 
 from .spoil_dataset import (

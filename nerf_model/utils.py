@@ -32,6 +32,9 @@ from packaging import version as pver
 import lpips
 from torchmetrics.functional import structural_similarity_index_measure
 
+from .time_measure import TimeMeasure
+tm = TimeMeasure()
+
 def custom_meshgrid(*args):
     # ref: https://pytorch.org/docs/stable/generated/torch.meshgrid.html?highlight=meshgrid#torch.meshgrid
     if pver.parse(torch.__version__) < pver.parse('1.10'):
@@ -338,6 +341,7 @@ class Trainer(object):
                  use_checkpoint="latest", # which ckpt to use at init time
                  use_tensorboardX=True, # whether to use tensorboard for logging
                  scheduler_update_every_step=False, # whether to call scheduler.step() after every train step
+                 semantic_remap=None, # just dict a dict
                  ):
         
         self.name = name
@@ -360,6 +364,7 @@ class Trainer(object):
         self.scheduler_update_every_step = scheduler_update_every_step
         self.device = device if device is not None else torch.device(f'cuda:{local_rank}' if torch.cuda.is_available() else 'cpu')
         self.console = Console()
+        self.semantic_remap = semantic_remap
 
         model.to(self.device)
         if self.world_size > 1:
@@ -618,8 +623,9 @@ class Trainer(object):
 
         if bg_color is not None:
             bg_color = bg_color.to(self.device)
-
+        tm.start('render')
         outputs = self.model.render(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=perturb, **vars(self.opt))
+        tm.end('render')
         SC = self.model.num_semantic_classes
 
         pred_rgb = outputs['image'].reshape(-1, H, W, 3)
@@ -725,6 +731,8 @@ class Trainer(object):
 
                 if write_video:
                     all_preds.append(pred)
+                    if self.semantic_remap:
+                        self.semantic_remap.inv_remap(pred_smntc, inplace=True)
                     all_preds_smntc.append(pred_smntc)
                     all_preds_depth.append(pred_depth)
                 else:

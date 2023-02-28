@@ -111,6 +111,8 @@ if __name__ == '__main__':
     parser.add_argument('--visualise_save',  action='store_true', help='whether to save the noisy labels into harddrive for later usage')
     parser.add_argument('--load_saved',  action='store_true', help='use trained noisy labels for training to ensure consistency betwwen experiments')
 
+    parser.add_argument('--path_to_save_tm', default="", type=str)
+
     opt = parser.parse_args()
 
     if opt.O:
@@ -156,7 +158,9 @@ if __name__ == '__main__':
             criterion=criterion, 
             criterion_semantic=criterion_semantic, 
             fp16=opt.fp16, metrics=metrics, 
-            use_checkpoint=opt.ckpt)
+            use_checkpoint=opt.ckpt,
+            semantic_remap=SemanticRemap(opt.semantic_remap) if opt.semantic_remap else None
+        )
 
         if opt.gui:
             gui = NeRFGUI(opt, trainer)
@@ -198,7 +202,9 @@ if __name__ == '__main__':
             ema_decay=0.95, fp16=opt.fp16, 
             lr_scheduler=scheduler, scheduler_update_every_step=True, 
             metrics=metrics, use_checkpoint=opt.ckpt, 
-            eval_interval=50)
+            eval_interval=50,
+            semantic_remap=nerf_dataset.semantic_remap,
+        )
 
         if opt.gui:
             gui = NeRFGUI(opt, trainer, train_loader)
@@ -220,3 +226,8 @@ if __name__ == '__main__':
             trainer.test(test_loader, write_video=True) # test and save video
             
             trainer.save_mesh(resolution=256, threshold=10)
+
+            if opt.path_to_save_tm == '':
+                opt.path_to_save_tm = os.path.join(opt.workspace, "time_measurements.json")
+            
+            tm.save(opt.path_to_save_tm)
