@@ -1,15 +1,24 @@
 import torch
 
 class SemanticRemap:
-    def __init__(self):
-        self.direct_remap_dict = None
-        self.inv_remap_dict = None
+    def __init__(self, remap=None):
+        if remap is None:
+            self.direct_remap_dict = None
+            self.inv_remap_dict = None
+        else:
+            self.direct_remap_dict = remap
+            self.__create_inv_remap()
 
     def __apply_remap(self, semantic_images, inv=False):
         remap_to_apply = self.direct_remap_dict if not inv else self.inv_remap_dict
         for c, c_remap in remap_to_apply.items():
             semantic_images[semantic_images == c] = c_remap
         return semantic_images
+
+    def __create_inv_remap(self):
+         # index <-> class
+        self.inv_remap_dict = {item: key for key, item in self.direct_remap_dict.items()}
+
 
     def __create_direct_inv_remap(self, semantic_images):
         print("[INFO] Start semantic remap ->\n\t", end="")
@@ -20,8 +29,7 @@ class SemanticRemap:
         # class <-> index
         self.direct_remap_dict = dict(zip(self.semantic_classes, torch.arange(len(self.semantic_classes))))
 
-        # index <-> class
-        self.inv_remap_dict = {item: key for key, item in self.direct_remap_dict.items()}
+        self.__create_inv_remap()
 
         print(*[f"{k}: {v}" for (k, v) in self.direct_remap_dict.items()], sep='\n\t')
 

@@ -15,6 +15,16 @@ from torch.utils.data import DataLoader
 from .utils import get_rays
 from .semantic_utils import SemanticRemap
 
+from .spoil_dataset import (
+    apply_sparse,
+    load_saved,
+    save_spoiled,
+    apply_pixel_denoise,
+    apply_region_denoise,
+    apply_super_resolution,
+    apply_label_propagation,
+)
+
 
 # ref: https://github.com/NVlabs/instant-ngp/blob/b76004c8cf478880227401ae763be4c02f80b62f/include/neural-graphics-primitives/nerf_loader.h#L50
 def nerf_matrix_to_ngp(pose, scale=0.33, offset=[0, 0, 0]):
@@ -188,12 +198,16 @@ class NeRFDataset:
                 pose[:3, :3] = slerp(ratio).as_matrix()
                 pose[:3, 3] = (1 - ratio) * pose0[:3, 3] + ratio * pose1[:3, 3]
                 self.poses.append(pose)
-
+        elif self.mode == 'colmap' and type == 'train' and opt.load_saved is not None:
+            self.poses = []
+            self.images = []
+            self.semantic_images = []
+            load_saved(opt, self.poses, self.images, self.semantic_images)
         else:
             # for colmap, manually split a valid set (the first frame).
             if self.mode == 'colmap':
                 if type == 'train':
-                    frames = frames[1:]
+                    frames = apply_sparse(frames[1:])
                 elif type == 'val':
                     frames = frames[:1]
                 # else 'all' or 'trainval' : use all frames
@@ -239,6 +253,20 @@ class NeRFDataset:
                 self.poses.append(pose)
                 self.images.append(image)
                 self.semantic_images.append(semantic)
+
+        ### spoil dataset
+        if type == 'train' and not opt.load_saved:
+            if opt.pixel_denoising:
+                apply_pixel_denoise(opt, self.poses, self.images, self.semantic_images)
+            if opt.region_denoising:
+                apply_region_denoise(opt, self.poses, self.images, self.semantic_images)
+            if opt.super_resolution:
+                apply_super_resolution(opt, self.poses, self.images, self.semantic_images)
+            if opt.label_propagation:
+                apply_label_propagation(opt, self.poses, self.images, self.semantic_images)
+
+            if opt.visualise_save:
+                save_spoiled(opt, self.poses, self.images, self.semantic_images)
             
         self.poses = torch.from_numpy(np.stack(self.poses, axis=0)) # [N, 4, 4]
         if self.images is not None:
@@ -298,7 +326,6 @@ class NeRFDataset:
         cy = (transform['cy'] / downscale) if 'cy' in transform else (self.H / 2)
     
         self.intrinsics = np.array([fl_x, fl_y, cx, cy])
-
 
     def collate(self, index):
 

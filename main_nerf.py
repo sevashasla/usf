@@ -1,5 +1,6 @@
 import torch
 import argparse
+import json
 
 from nerf_model.provider import NeRFDataset
 from nerf_model.gui import NeRFGUI
@@ -15,6 +16,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('path', type=str)
+    parser.add_argument('--num_epoch', type=int, default=10)
     parser.add_argument('-O', action='store_true', help="equals --fp16 --cuda_ray --preload")
     parser.add_argument('--test', action='store_true', help="test mode")
     parser.add_argument('--workspace', type=str, default='workspace')
@@ -65,6 +67,49 @@ if __name__ == '__main__':
 
     ### semantic
     parser.add_argument('--num_semantic_classes', type=int, required=False, help="number of semantic classes")
+    parser.add_argument('--semantic_remap', type=json.loads, required=False, help="remap for semantic classes")
+
+    ### SPECIAL PARAMETERS
+    # sparse-views
+    parser.add_argument("--sparse_views", action='store_true',
+                        help='Use labels from a sparse set of frames')
+    parser.add_argument("--sparse_ratio", type=float, default=0,
+                        help='The portion of dropped labelling frames during training, which can be used along with all working modes.')    
+    parser.add_argument("--label_map_ids", nargs='*', type=int, default=[],
+                        help='In sparse view mode, use selected frame ids from sequences as supervision.')
+    parser.add_argument("--random_sample", action='store_true', help='Whether to randomly/evenly sample frames from the sequence.')
+
+    # denoising---pixel-wise
+    parser.add_argument("--pixel_denoising", action='store_true',
+                        help='Whether to work in pixel-denoising tasks.')
+    parser.add_argument("--pixel_noise_ratio", type=float, default=0,
+                        help='In sparse view mode, if pixel_noise_ratio > 0, the percentage of pixels to be perturbed in each sampled frame  for pixel-wise denoising task..')
+                        
+    # denoising---region-wise
+    parser.add_argument("--region_denoising", action='store_true',
+                        help='Whether to work in region-denoising tasks by flipping class labels of chair instances in Replica Room_2')
+    parser.add_argument("--region_noise_ratio", type=float, default=0,
+                        help='In region-wise denoising task, region_noise_ratio is the percentage of chair instances to be perturbed in each sampled frame for region-wise denoising task.')
+    parser.add_argument("--uniform_flip", action='store_true',
+                        help='In region-wise denoising task, whether to change chair labels uniformly or not, i.e., by ascending area ratios. This corresponds to two set-ups mentioned in the paper.')
+    parser.add_argument("--instance_id", nargs='*', type=int, default=[3, 6, 7, 9, 11, 12, 13, 48],
+                        help='In region-wise denoising task, the chair instance ids in Replica Room_2 to be randomly perturbed. The ids of all 8 chairs are [3, 6, 7, 9, 11, 12, 13, 48]')
+       
+    # super-resolution
+    parser.add_argument("--super_resolution", action='store_true',
+                        help='set to render synthetic data on a white bkgd (always use for dvoxels)')
+    parser.add_argument('--dense_sr',  action='store_true', help='Whether to use dense or sparse labels for SR instead of dense labels.')
+    parser.add_argument('--sr_factor',  type=int, default=8, help='Scaling factor of super-resolution.')
+
+    # label propagation
+    parser.add_argument("--label_propagation", action='store_true',
+                        help='Label propagation using partial seed regions.')
+    parser.add_argument("--partial_perc", type=float, default=0,
+                        help='0: single-click propagation; 1: using 1-percent sub-regions for label propagation, 5: using 5-percent sub-regions for label propagation')
+
+    # cache
+    parser.add_argument('--visualise_save',  action='store_true', help='whether to save the noisy labels into harddrive for later usage')
+    parser.add_argument('--load_saved',  action='store_true', help='use trained noisy labels for training to ensure consistency betwwen experiments')
 
     opt = parser.parse_args()
 
@@ -84,8 +129,6 @@ if __name__ == '__main__':
         raise RuntimeError("Must be known if test")
     
     seed_everything(opt.seed)
-
-    # semantic_params = 
 
     criterion = torch.nn.MSELoss(reduction='none')
     criterion_semantic = torch.nn.CrossEntropyLoss()
@@ -156,7 +199,6 @@ if __name__ == '__main__':
             lr_scheduler=scheduler, scheduler_update_every_step=True, 
             metrics=metrics, use_checkpoint=opt.ckpt, 
             eval_interval=50)
-
 
         if opt.gui:
             gui = NeRFGUI(opt, trainer, train_loader)

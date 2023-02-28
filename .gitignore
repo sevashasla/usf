@@ -3,8 +3,8 @@
 
 
 ### results of work ###
-results/*
-tmp/*
+results/
+tmp/
 
 ### C++ ###
 # Prerequisites
