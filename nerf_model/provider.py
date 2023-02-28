@@ -17,7 +17,7 @@ from .semantic_utils import SemanticRemap
 
 from .spoil_dataset import (
     apply_sparse,
-    load_saved,
+    load_spoiled,
     save_spoiled,
     apply_pixel_denoise,
     apply_region_denoise,
@@ -198,16 +198,16 @@ class NeRFDataset:
                 pose[:3, :3] = slerp(ratio).as_matrix()
                 pose[:3, 3] = (1 - ratio) * pose0[:3, 3] + ratio * pose1[:3, 3]
                 self.poses.append(pose)
-        elif self.mode == 'colmap' and type == 'train' and opt.load_saved is not None:
+        elif self.mode == 'colmap' and type == 'train' and opt.load_saved:
             self.poses = []
             self.images = []
             self.semantic_images = []
-            load_saved(opt, self.poses, self.images, self.semantic_images)
+            load_spoiled(opt, self.poses, self.images, self.semantic_images)
         else:
             # for colmap, manually split a valid set (the first frame).
             if self.mode == 'colmap':
                 if type == 'train':
-                    frames = apply_sparse(frames[1:])
+                    frames = apply_sparse(opt, frames[1:])
                 elif type == 'val':
                     frames = frames[:1]
                 # else 'all' or 'trainval' : use all frames
