@@ -64,8 +64,6 @@ if __name__ == '__main__':
     parser.add_argument('--rand_pose', type=int, default=-1, help="<0 uses no rand pose, =0 only uses rand pose, >0 sample one rand pose every $ known poses")
 
     ### semantic
-    parser.add_argument('--semantic_info', type=str, help="path to file with semantic info")
-    parser.add_argument('--semantic_dir', type=str, help="path to dir with semantic images")
     parser.add_argument('--num_semantic_classes', type=int, required=False, help="number of semantic classes")
 
     opt = parser.parse_args()
@@ -81,6 +79,9 @@ if __name__ == '__main__':
         assert opt.num_rays % (opt.patch_size ** 2) == 0, "patch_size ** 2 should be dividable by num_rays."
 
     print(opt)
+
+    if opt.test and opt.num_semantic_classes is None:
+        raise RuntimeError("Must be known if test")
     
     seed_everything(opt.seed)
 

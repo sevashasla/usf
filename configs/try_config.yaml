@@ -1,0 +1,42 @@
+experiment:
+  path: "/home/sevashasla/coding/datasets/replica/Replica_Dataset/room_0/Sequence_1/" # path to data
+  workspace: "results/try_config_1"      # name of workspace
+  test: False               # test or train
+  seed: 0                   # seed
+
+train:
+  iters: 30000              # training iters
+  lr: 1e-2                  # initial learning rate
+  ckpt: 'latest'            # which ckpt should use in training
+  num_rays: 4096            # num rays sampled per image for each training step
+  cuda_ray: False           # use cuda_ray
+  max_steps: 1024           # max num steps sampled per ray (only valid when using --cuda_ray)
+  num_steps: 512            # num steps sampled per ray (only valid when NOT using --cuda_ray)
+  upsample_steps: 0         # num steps up-sampled per ray (only valid when NOT using --cuda_ray)
+  update_extra_interval: 16 # iter interval to update extra status (only valid when using --cuda_ray)
+  max_ray_batch: 4096       # batch size of rays at inference to avoid OOM (only valid when NOT using --cuda_ray)
+  patch_size: 1             # [experimental] render patches in training, so as to apply LPIPS loss. 1 means disabled, use [64, 32, 16] to enable
+  fp16: True                # use amp mixed precision training
+
+dataset:
+  color_space: 'srgb'       # Color space, supports (linear, srgb)
+  preload: False            # preload all data into GPU, accelerate training but use more GPU memory
+  bound: 2                  # assume the scene is bounded in box[-bound, bound]^3, if > 1, will invoke adaptive ray marching.
+  scale: 0.33               # scale camera location into box[-bound, bound]^3
+  offset: [0, 0, 0]         # offset of camera location
+  dt_gamma: 1/128           # dt_gamma (>=0) for adaptive ray marching. set to 0 to disable, >0 to accelerate rendering (but usually with worse quality)
+  min_near: 0.2             # minimum near distance for camera
+  density_thresh: 10        # threshold for density grid to be occupied
+  bg_radius: -1             # if positive, use a background model at sphere(bg_radius)
+
+gui:
+    use_gui: False          # start a GUI
+    W: 1920                 # GUI width
+    H: 1080                 # GUI height
+    radius: 5               # default GUI camera radius from center
+    fovy: 50                # default GUI camera fovy
+    max_spp: 64             # GUI rendering max sample per pixel
+
+semantic:
+    num_semantic_classes:  # number of semantic classes
+    semantic_remap:         # dict of {from: to} -> semantic remap

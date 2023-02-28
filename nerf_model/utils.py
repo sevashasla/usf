@@ -718,7 +718,7 @@ class Trainer(object):
                 pred = (pred * 255).astype(np.uint8)
 
                 pred_smntc = pred_smntc[0].detach().cpu().numpy()
-                pred_smntc = pred_smntc.argmax(axis=-1)
+                pred_smntc = pred_smntc.argmax(axis=-1).astype(np.uint8)
 
                 pred_depth = preds_depth[0].detach().cpu().numpy()
                 pred_depth = (pred_depth * 255).astype(np.uint8)

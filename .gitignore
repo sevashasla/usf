@@ -4,6 +4,7 @@
 
 ### results of work ###
 results/*
+tmp/*
 
 ### C++ ###
 # Prerequisites
