@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 
 from .utils import get_rays, tm
 from .semantic_utils import SemanticRemap
+from sklearn.model_selection import train_test_split
 
 from .spoil_dataset import (
     apply_sparse,
@@ -103,7 +104,7 @@ def rand_poses(size, device, radius=1, theta_range=[np.pi/3, 2*np.pi/3], phi_ran
 
 
 class NeRFDataset:
-    def __init__(self, opt, device, type='train', downscale=1, n_test=100, semantic_remap=None):
+    def __init__(self, opt, device, type='train', downscale=1, n_test=100, train_val_indexer=None, semantic_remap=None):
         super().__init__()
         
         self.opt = opt
@@ -116,9 +117,9 @@ class NeRFDataset:
         self.offset = opt.offset # camera offset
         self.bound = opt.bound # bounding box half length, also used as the radius to random sample poses.
         self.fp16 = opt.fp16 # if preload, load into fp16.
-
         self.training = self.type in ['train', 'all', 'trainval']
         self.num_rays = self.opt.num_rays if self.training else -1
+        self.train_val_indexer = train_val_indexer
 
         self.rand_pose = opt.rand_pose
 
@@ -205,11 +206,18 @@ class NeRFDataset:
             load_spoiled(opt, self.poses, self.images, self.semantic_images)
         else:
             # for colmap, manually split a valid set (the first frame).
+            # TODO
             if self.mode == 'colmap':
                 if type == 'train':
-                    frames = apply_sparse(opt, frames[1:])
+                    train_idx, val_idx = train_test_split(np.arange(len(frames)), test_size=opt.eval_ratio)
+                    self.train_val_indexer = {
+                        "train_idx": train_idx,
+                        "val_idx": val_idx
+                    }
+                
+                    frames = apply_sparse(opt, [frames[i] for i in self.train_val_indexer['train_idx']])
                 elif type == 'val':
-                    frames = frames[:1]
+                    frames = [frames[i] for i in self.train_val_indexer['val_idx']]
                 # else 'all' or 'trainval' : use all frames
             
             self.poses = []

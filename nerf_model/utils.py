@@ -32,6 +32,8 @@ from packaging import version as pver
 import lpips
 from torchmetrics.functional import structural_similarity_index_measure
 
+from sklearn.metrics import confusion_matrix
+
 from .time_measure import TimeMeasure
 tm = TimeMeasure()
 
@@ -206,6 +208,62 @@ def extract_geometry(bound_min, bound_max, resolution, threshold, query_func):
     return vertices, triangles
 
 
+def nanmean(data, **args):
+    # This makes it ignore the first 'background' class
+    return np.ma.masked_array(data, np.isnan(data)).mean(**args)
+    # In np.ma.masked_array(data, np.isnan(data), elements of data == np.nan is invalid and will be ingorned during computation of np.mean()
+
+
+class SegmentationMeter:
+    def __init__(self, num_semantic_classes, ignore_label=-1):
+        self.num_semantic_classes = num_semantic_classes
+        self.ignore_label = ignore_label
+        self.preds = []
+        self.truths = []
+
+    def clear(self):
+        self.preds = []
+        self.truths = []
+
+    def measure(self):
+        true_labels = np.hstack(self.truths)
+        predicted_labels = np.hstack(self.preds)
+        conf_mat = confusion_matrix(true_labels, predicted_labels, labels=list(range(self.num_semantic_classes)))
+        norm_conf_mat = np.transpose(
+            np.transpose(conf_mat) / conf_mat.astype(np.float).sum(axis=1))
+
+        missing_class_mask = np.isnan(norm_conf_mat.sum(1)) # missing class will have NaN at corresponding class
+        exsiting_class_mask = ~ missing_class_mask
+
+        class_average_accuracy = nanmean(np.diagonal(norm_conf_mat))
+        total_accuracy = (np.sum(np.diagonal(conf_mat)) / np.sum(conf_mat))
+        ious = np.zeros(self.num_semantic_classes)
+        for class_id in range(self.num_semantic_classes):
+            ious[class_id] = (conf_mat[class_id, class_id] / (
+                    np.sum(conf_mat[class_id, :]) + np.sum(conf_mat[:, class_id]) -
+                    conf_mat[class_id, class_id]))
+        miou = nanmean(ious)
+        miou_valid_class = np.mean(ious[exsiting_class_mask])
+        return miou, miou_valid_class, total_accuracy, class_average_accuracy, ious
+
+    def update(self, preds, truths):
+        # TODO: may be bug here if [B, H, W] and W = self.num_semantic_classes
+        if preds.ndim >= 3 and preds.shape[-1] == self.num_semantic_classes:
+            preds = torch.argmax(preds, dim=-1)
+        valid_pix_idx = preds.flatten() != self.ignore_label
+        preds = preds.flatten()[valid_pix_idx]
+        truths = truths.flatten()[valid_pix_idx]
+        self.preds.append(preds.detach().cpu().numpy())
+        self.truths.append(truths.detach().cpu().numpy())
+
+    def write(self, writer, global_step, prefix=""):
+        writer.add_text(os.path.join(prefix, "SSIM"), self.report(), global_step)
+
+    def report(self):
+        miou, miou_valid_class, total_accuracy, class_average_accuracy, ious = self.measure()
+        return f"miou: {miou:.3f},\nmiou_valid_class: {miou_valid_class:.3f},\ntotal_accuracy: {total_accuracy:.3f},\nclass_average_accuracy: {class_average_accuracy:.3f},\nious: \n{ious}"
+        
+
 class PSNRMeter:
     def __init__(self):
         self.V = 0
@@ -327,6 +385,8 @@ class Trainer(object):
                  ema_decay=None, # if use EMA, set the decay
                  lr_scheduler=None, # scheduler
                  metrics=[], # metrics for evaluation, if None, use val_loss to measure performance, else use the first metric.
+                 segmentation_metrics=[],
+                 depth_metrics=[],
                  local_rank=0, # which GPU am I
                  world_size=1, # total num of GPUs
                  device=None, # device to use, usually setting to None is OK. (auto choose device)
@@ -348,6 +408,8 @@ class Trainer(object):
         self.opt = opt
         self.mute = mute
         self.metrics = metrics
+        self.segmentation_metrics = segmentation_metrics
+        self.depth_metrics = depth_metrics
         self.local_rank = local_rank
         self.world_size = world_size
         self.workspace = workspace
@@ -409,7 +471,11 @@ class Trainer(object):
         self.stats = {
             "loss": [],
             "valid_loss": [],
-            "results": [], # metrics[0], or valid_loss
+            "results": {
+                "metrics": [], 
+                "segmentation_metrics": [], 
+                "depth_metrics": []
+            }, # metrics[0], or valid_loss
             "checkpoints": [], # record path of saved ckpt, to automatically remove old ckpt
             "best_result": None,
             }
@@ -473,6 +539,14 @@ class Trainer(object):
                 print(*args, file=self.log_ptr)
                 self.log_ptr.flush() # write immediately to file
 
+    def __clear_metrics(self):
+        for metric in self.metrics:
+            metric.clear()
+        for smetric in self.segmentation_metrics:
+            smetric.clear()
+        for dmetric in self.depth_metrics:
+            dmetric.clear()
+
     ### ------------------------------	
 
     def train_step(self, data):
@@ -489,13 +563,14 @@ class Trainer(object):
             # currently fix white bg, MUST force all rays!
             outputs = self.model.render(rays_o, rays_d, staged=False, bg_color=None, perturb=True, force_all_rays=True, **vars(self.opt))
             pred_rgb = outputs['image'].reshape(B, H, W, 3).permute(0, 3, 1, 2).contiguous()
+            pred_smntc = outputs['semantic_image']
+            pred_depth = outputs['depth']
 
             # [debug] uncomment to plot the images used in train_step
             #torch_vis_2d(pred_rgb[0])
 
             loss = self.clip_loss(pred_rgb)
-            
-            return pred_rgb, None, loss
+            return pred_rgb, None, pred_smntc, None, pred_depth, loss
 
         images = data['images'] # [B, N, 3/4]
         semantic_images = data['semantic_images']
@@ -525,11 +600,12 @@ class Trainer(object):
     
         pred_rgb = outputs['image']
         pred_smntc = outputs['semantic_image']
+        pred_depth = outputs['depth']
 
         # MSE loss
         loss = self.criterion(pred_rgb, gt_rgb).mean(-1) # [B, N, 3] --> [B, N]
-        # CrossEntropyLoss
 
+        # CrossEntropyLoss
         loss_ce = self.criterion_semantic(pred_smntc.view(B * N, SC), gt_smntc.view(B * N)) # scalar
 
         # patch-based rendering
@@ -580,7 +656,7 @@ class Trainer(object):
         # loss_ws = - 1e-1 * pred_weights_sum * torch.log(pred_weights_sum) # entropy to encourage weights_sum to be 0 or 1.
         # loss = loss + loss_ws.mean()
 
-        return pred_rgb, gt_rgb, pred_smntc, gt_smntc, loss
+        return pred_rgb, gt_rgb, pred_smntc, gt_smntc, pred_depth, loss
 
     def eval_step(self, data):
 
@@ -605,7 +681,7 @@ class Trainer(object):
         outputs = self.model.render(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=False, **vars(self.opt))
 
         pred_rgb = outputs['image'].reshape(B, H, W, 3)
-        pred_smntc = outputs['semantic_images'].reshape(B, H, W, SC)
+        pred_smntc = outputs['semantic_image'].reshape(B, H, W, SC)
         pred_depth = outputs['depth'].reshape(B, H, W)
 
         loss = self.criterion(pred_rgb, gt_rgb).mean()
@@ -672,7 +748,6 @@ class Trainer(object):
         
         for epoch in range(self.epoch + 1, max_epochs + 1):
             self.epoch = epoch
-
             self.train_one_epoch(train_loader)
 
             if self.workspace is not None and self.local_rank == 0:
@@ -784,7 +859,7 @@ class Trainer(object):
             self.optimizer.zero_grad()
 
             with torch.cuda.amp.autocast(enabled=self.fp16):
-                preds, truths, pred_smntc, gt_smntc, loss = self.train_step(data)
+                preds, truths, pred_smntc, gt_smntc, pred_depth, loss = self.train_step(data)
          
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
@@ -874,8 +949,7 @@ class Trainer(object):
 
         total_loss = 0
         if self.local_rank == 0 and self.report_metric_at_train:
-            for metric in self.metrics:
-                metric.clear()
+            self.__clear_metrics()
 
         self.model.train()
 
@@ -902,7 +976,7 @@ class Trainer(object):
             self.optimizer.zero_grad()
 
             with torch.cuda.amp.autocast(enabled=self.fp16):
-                preds, truths, preds_smntc, gt_smntc, loss = self.train_step(data)
+                preds, truths, preds_smntc, gt_smntc, pred_depth, loss = self.train_step(data)
          
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
@@ -918,6 +992,10 @@ class Trainer(object):
                 if self.report_metric_at_train:
                     for metric in self.metrics:
                         metric.update(preds, truths)
+                    for smetric in self.segmentation_metrics:
+                        smetric.update(preds_smntc, gt_smntc)
+                    for dmetric in self.depth_metrics:
+                        dmetric.update(pred_depth, ...)
                         
                 if self.use_tensorboardX:
                     self.writer.add_scalar("train/loss", loss_val, self.global_step)
@@ -943,6 +1021,10 @@ class Trainer(object):
                     if self.use_tensorboardX:
                         metric.write(self.writer, self.epoch, prefix="train")
                     metric.clear()
+                for smetric in self.segmentation_metrics:
+                    self.log(smetric.report(), style="red")
+                for dmetric in self.depth_metrics:
+                    self.log(dmetric.report(), style="red")
 
         if not self.scheduler_update_every_step:
             if isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -961,9 +1043,7 @@ class Trainer(object):
 
         total_loss = 0
         if self.local_rank == 0:
-            for metric in self.metrics:
-                metric.clear()
-
+            self.__clear_metrics()
         self.model.eval()
 
         if self.ema is not None:
@@ -980,7 +1060,7 @@ class Trainer(object):
                 self.local_step += 1
 
                 with torch.cuda.amp.autocast(enabled=self.fp16):
-                    preds, pred_smntc, preds_depth, truths, gt_smntc, loss = self.eval_step(data)
+                    preds, preds_smntc, preds_depth, truths, gt_smntc, loss = self.eval_step(data)
 
                 # all_gather/reduce the statistics (NCCL only support all_*)
                 if self.world_size > 1:
@@ -1012,9 +1092,12 @@ class Trainer(object):
 
                 # only rank = 0 will perform evaluation.
                 if self.local_rank == 0:
-
                     for metric in self.metrics:
                         metric.update(preds, truths)
+                    for smetric in self.segmentation_metrics:
+                        smetric.update(preds_smntc, gt_smntc)
+                    for dmetric in self.depth_metrics:
+                        dmetric.update(preds_depth, ...)
 
                     # save image
                     save_path = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_rgb.png')
@@ -1031,13 +1114,13 @@ class Trainer(object):
                     pred = (pred * 255).astype(np.uint8)
 
                     pred_smntc = preds_smntc[0].detach().cpu().numpy()
-                    pred_smntc = (pred_smntc * 255).astype(np.uint8)
+                    pred_smntc = pred_smntc.argmax(axis=-1).astype(np.uint8)
 
                     pred_depth = preds_depth[0].detach().cpu().numpy()
                     pred_depth = (pred_depth * 255).astype(np.uint8)
                     
                     cv2.imwrite(save_path, cv2.cvtColor(pred, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite(save_path_smntc, preds_smntc)
+                    cv2.imwrite(save_path_smntc, pred_smntc)
                     cv2.imwrite(save_path_depth, pred_depth)
 
                     pbar.set_description(f"loss={loss_val:.4f} ({total_loss/self.local_step:.4f})")
@@ -1051,15 +1134,35 @@ class Trainer(object):
             pbar.close()
             if not self.use_loss_as_metric and len(self.metrics) > 0:
                 result = self.metrics[0].measure()
-                self.stats["results"].append(result if self.best_mode == 'min' else - result) # if max mode, use -result
+                self.stats["results"]['metrics'].append(result if self.best_mode == 'min' else - result) # if max mode, use -result
             else:
-                self.stats["results"].append(average_loss) # if no metric, choose best by min loss
+                self.stats["results"]['metrics'].append(average_loss) # if no metric, choose best by min loss
+            
+            if not self.use_loss_as_metric and len(self.segmentation_metrics) > 0:
+                result = self.segmentation_metrics[0].report()
+                self.stats["results"]['segmentation_metrics'].append(result)
 
+            if not self.use_loss_as_metric and len(self.depth_metrics) > 0:
+                result = self.depth_metrics[0].report()
+                self.stats["results"]['depth_metrics'].append(result)
+            
             for metric in self.metrics:
                 self.log(metric.report(), style="blue")
                 if self.use_tensorboardX:
                     metric.write(self.writer, self.epoch, prefix="evaluate")
                 metric.clear()
+
+            for smetric in self.segmentation_metrics:
+                self.log(smetric.report(), style="blue")
+                if self.use_tensorboardX:
+                    smetric.write(self.writer, self.epoch, prefix="evaluate")
+                smetric.clear()
+
+            for dmetric in self.depth_metrics:
+                self.log(dmetric.report(), style="blue")
+                if self.use_tensorboardX:
+                    dmetric.write(self.writer, self.epoch, prefix="evaluate")
+                dmetric.clear()
 
         if self.ema is not None:
             self.ema.restore()
@@ -1105,10 +1208,10 @@ class Trainer(object):
             torch.save(state, file_path)
 
         else:    
-            if len(self.stats["results"]) > 0:
-                if self.stats["best_result"] is None or self.stats["results"][-1] < self.stats["best_result"]:
-                    self.log(f"[INFO] New best result: {self.stats['best_result']} --> {self.stats['results'][-1]}")
-                    self.stats["best_result"] = self.stats["results"][-1]
+            if len(self.stats["results"]['metrics']) > 0:
+                if self.stats["best_result"] is None or self.stats["results"]['metrics'][-1] < self.stats["best_result"]:
+                    self.log(f"[INFO] New best result: {self.stats['best_result']} --> {self.stats['results']['metrics'][-1]}")
+                    self.stats["best_result"] = self.stats["results"]['metrics'][-1]
 
                     # save ema results 
                     if self.ema is not None:

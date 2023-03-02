@@ -21,6 +21,8 @@ if __name__ == '__main__':
     parser.add_argument('--test', action='store_true', help="test mode")
     parser.add_argument('--workspace', type=str, default='workspace')
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--eval_interval', type=int, default=5)
+    parser.add_argument('--eval_ratio', type=float, default=0.2)
 
     ### training options
     parser.add_argument('--iters', type=int, default=30000, help="training iters")
@@ -151,13 +153,17 @@ if __name__ == '__main__':
             num_semantic_classes=opt.num_semantic_classes,
         )
 
-        metrics = [PSNRMeter(), LPIPSMeter(device=device)]
+        metrics = [PSNRMeter(), LPIPSMeter(device=device), SSIMMeter(device=device)]
+        segmentation_metrics = [SegmentationMeter(opt.num_semantic_classes)]
+        # TODO
+        depth_metrics = []
         trainer = Trainer(
             'ngp', opt, model, 
             device=device, workspace=opt.workspace, 
             criterion=criterion, 
             criterion_semantic=criterion_semantic, 
-            fp16=opt.fp16, metrics=metrics, 
+            fp16=opt.fp16, 
+            metrics=metrics, segmentation_metrics=segmentation_metrics, depth_metrics=depth_metrics,
             use_checkpoint=opt.ckpt,
             semantic_remap=SemanticRemap(opt.semantic_remap) if opt.semantic_remap else None
         )
@@ -191,7 +197,10 @@ if __name__ == '__main__':
         # decay to 0.1 * init_lr at last iter step
         scheduler = lambda optimizer: optim.lr_scheduler.LambdaLR(optimizer, lambda iter: 0.1 ** min(iter / opt.iters, 1))
 
-        metrics = [PSNRMeter(), LPIPSMeter(device=device)]
+        metrics = [PSNRMeter(), LPIPSMeter(device=device), SSIMMeter(device=device)]
+        segmentation_metrics = [SegmentationMeter(num_semantic_classes)]
+        # TODO
+        depth_metrics = []
 
         trainer = Trainer(
             'ngp', opt, model, 
@@ -201,8 +210,9 @@ if __name__ == '__main__':
             criterion_semantic=criterion_semantic, 
             ema_decay=0.95, fp16=opt.fp16, 
             lr_scheduler=scheduler, scheduler_update_every_step=True, 
-            metrics=metrics, use_checkpoint=opt.ckpt, 
-            eval_interval=50,
+            metrics=metrics, segmentation_metrics=segmentation_metrics, depth_metrics=depth_metrics, 
+            use_checkpoint=opt.ckpt, 
+            eval_interval=opt.eval_interval,
             semantic_remap=nerf_dataset.semantic_remap,
         )
 
@@ -211,7 +221,10 @@ if __name__ == '__main__':
             gui.render()
         
         else:
-            valid_loader = NeRFDataset(opt, device=device, type='val', downscale=1, semantic_remap=nerf_dataset.semantic_remap).dataloader()
+            valid_loader = NeRFDataset(
+                opt, device=device, type='val', downscale=1, 
+                semantic_remap=nerf_dataset.semantic_remap,
+                train_val_indexer=nerf_dataset.train_val_indexer).dataloader()
 
             max_epoch = np.ceil(opt.iters / len(train_loader)).astype(np.int32)
             print(f"[INFO] MAX_EPOCH: {max_epoch}")
