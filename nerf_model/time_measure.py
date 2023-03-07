@@ -18,5 +18,14 @@ class TimeMeasure:
     def end(self, name):
         delta = time.time() - self.times[name][-1]
         self.times[name][-1] = delta
+    
+    def mean(self, name=None):
+        if name is None:
+            result = {}
+            for key, arr in self.times.items():
+                result[key] = np.mean(arr)
+            return result
+        else:
+            return np.mean(self.times[name])
         
     

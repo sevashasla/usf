@@ -5,6 +5,7 @@
 ### results of work ###
 results/
 tmp/
+wandb/
 
 ### C++ ###
 # Prerequisites

@@ -6,6 +6,7 @@ import imageio
 import random
 import warnings
 import tensorboardX
+import wandb
 
 import numpy as np
 import pandas as pd
@@ -262,6 +263,15 @@ class SegmentationMeter:
     def report(self):
         miou, miou_valid_class, total_accuracy, class_average_accuracy, ious = self.measure()
         return f"miou: {miou:.3f},\nmiou_valid_class: {miou_valid_class:.3f},\ntotal_accuracy: {total_accuracy:.3f},\nclass_average_accuracy: {class_average_accuracy:.3f},\nious: \n{ious}"
+
+    def wandb_log(self, prefix):
+        miou, miou_valid_class, total_accuracy, class_average_accuracy, ious = self.measure()
+        return {
+            f"{prefix}/miou" : miou, 
+            f"{prefix}/miou_valid_class" : miou_valid_class, 
+            f"{prefix}/total_accuracy" : total_accuracy, 
+            f"{prefix}/class_average_accuracy" : class_average_accuracy, 
+        }
         
 
 class PSNRMeter:
@@ -300,6 +310,9 @@ class PSNRMeter:
     def report(self):
         return f'PSNR = {self.measure():.6f}'
 
+    def wandb_log(self, prefix):
+        return {f"{prefix}/PSNR": self.measure()}
+
 
 class SSIMMeter:
     def __init__(self, device=None):
@@ -336,6 +349,9 @@ class SSIMMeter:
 
     def report(self):
         return f'SSIM = {self.measure():.6f}'
+    
+    def wandb_log(self, prefix):
+        return {f"{prefix}/SSIM": self.measure()}
 
 
 class LPIPSMeter:
@@ -374,6 +390,10 @@ class LPIPSMeter:
     def report(self):
         return f'LPIPS ({self.net}) = {self.measure():.6f}'
 
+    def wandb_log(self, prefix):
+        return {f"{prefix}/LPIPS": self.measure()}
+
+
 class Trainer(object):
     def __init__(self, 
                  name, # name of this experiment
@@ -384,6 +404,7 @@ class Trainer(object):
                  optimizer=None, # optimizer
                  ema_decay=None, # if use EMA, set the decay
                  lr_scheduler=None, # scheduler
+                 lambd=1.0,
                  metrics=[], # metrics for evaluation, if None, use val_loss to measure performance, else use the first metric.
                  segmentation_metrics=[],
                  depth_metrics=[],
@@ -427,6 +448,7 @@ class Trainer(object):
         self.device = device if device is not None else torch.device(f'cuda:{local_rank}' if torch.cuda.is_available() else 'cpu')
         self.console = Console()
         self.semantic_remap = semantic_remap
+        self.lambd = lambd
 
         model.to(self.device)
         if self.world_size > 1:
@@ -649,7 +671,8 @@ class Trainer(object):
 
         loss = loss.mean()
         # they use wieghted loss, but set lambda_ce = 1 it's ok
-        loss = loss + loss_ce
+        wandb.log({"train/loss": loss.item(), "train/loss_ce": loss_ce.item()})
+        loss = loss + self.lambd * loss_ce
 
         # extra loss
         # pred_weights_sum = outputs['weights_sum'] + 1e-8
@@ -804,10 +827,10 @@ class Trainer(object):
                 pred_depth = preds_depth[0].detach().cpu().numpy()
                 pred_depth = (pred_depth * 255).astype(np.uint8)
 
+                if self.semantic_remap:
+                    self.semantic_remap.inv_remap(pred_smntc, inplace=True)
                 if write_video:
                     all_preds.append(pred)
-                    if self.semantic_remap:
-                        self.semantic_remap.inv_remap(pred_smntc, inplace=True)
                     all_preds_smntc.append(pred_smntc)
                     all_preds_depth.append(pred_depth)
                 else:
@@ -824,6 +847,11 @@ class Trainer(object):
             imageio.mimwrite(os.path.join(save_path, f'{name}_rgb.mp4'), all_preds, fps=25, quality=8, macro_block_size=1)
             imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), all_preds_smntc, fps=25, quality=8, macro_block_size=1)
             imageio.mimwrite(os.path.join(save_path, f'{name}_depth.mp4'), all_preds_depth, fps=25, quality=8, macro_block_size=1)
+            wandb.log({
+                "video/rgb": wandb.Video(os.path.join(save_path, f'{name}_rgb.mp4'), format="mp4"),
+                "video/semantic": wandb.Video(os.path.join(save_path, f'{name}_smntc.mp4'), format="mp4"),
+                "video/depth": wandb.Video(os.path.join(save_path, f'{name}_depth.mp4'), format="mp4"),
+            })
 
         self.log(f"==> Finished Test.")
     
@@ -1016,15 +1044,20 @@ class Trainer(object):
         if self.local_rank == 0:
             pbar.close()
             if self.report_metric_at_train:
+                metrics_to_report = {}
                 for metric in self.metrics:
                     self.log(metric.report(), style="red")
+                    metrics_to_report.update(metric.wandb_log("train"))
                     if self.use_tensorboardX:
                         metric.write(self.writer, self.epoch, prefix="train")
-                    metric.clear()
                 for smetric in self.segmentation_metrics:
                     self.log(smetric.report(), style="red")
+                    metrics_to_report.update(smetric.wandb_log("train"))
                 for dmetric in self.depth_metrics:
                     self.log(dmetric.report(), style="red")
+                    metrics_to_report.update(dmetric.wandb_log("train"))
+                self.__clear_metrics()
+                wandb.log(metrics_to_report)
 
         if not self.scheduler_update_every_step:
             if isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -1145,24 +1178,20 @@ class Trainer(object):
             if not self.use_loss_as_metric and len(self.depth_metrics) > 0:
                 result = self.depth_metrics[0].report()
                 self.stats["results"]['depth_metrics'].append(result)
-            
-            for metric in self.metrics:
+            metrics_to_report = {}
+            for metric in self.metrics:    
+                metrics_to_report.update(metric.wandb_log("eval"))
                 self.log(metric.report(), style="blue")
                 if self.use_tensorboardX:
                     metric.write(self.writer, self.epoch, prefix="evaluate")
-                metric.clear()
-
             for smetric in self.segmentation_metrics:
+                metrics_to_report.update(smetric.wandb_log("eval"))
                 self.log(smetric.report(), style="blue")
-                if self.use_tensorboardX:
-                    smetric.write(self.writer, self.epoch, prefix="evaluate")
-                smetric.clear()
-
             for dmetric in self.depth_metrics:
+                metrics_to_report.update(dmetric.wandb_log("eval"))
                 self.log(dmetric.report(), style="blue")
-                if self.use_tensorboardX:
-                    dmetric.write(self.writer, self.epoch, prefix="evaluate")
-                dmetric.clear()
+            self.__clear_metrics()
+            wandb.log(metrics_to_report)
 
         if self.ema is not None:
             self.ema.restore()

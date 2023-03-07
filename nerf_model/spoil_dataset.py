@@ -48,7 +48,7 @@ def save_spoiled(opt, poses, images, semantic_images):
             np.save(f, semantic_images[i])
 
 
-def load_spoiled(opt, poses, images, semantic_images):
+def load_spoiled(opt, poses, images, semantic_images, depths):
     dir_name = get_name_dir(opt)
     path_saved = os.path.join(opt.path, dir_name)
     print(f"[INFO] load images from {path_saved}")
@@ -73,6 +73,14 @@ def load_spoiled(opt, poses, images, semantic_images):
             try:
                 curr_arr = np.load(f, allow_pickle=True)
                 semantic_images.append(curr_arr)
+            except:
+                break
+
+    with open(os.path.join(path_saved, "depths.npy"), "rb") as f:
+        while True:
+            try:
+                curr_arr = np.load(f, allow_pickle=True)
+                depths.append(curr_arr)
             except:
                 break
         
@@ -115,8 +123,10 @@ def apply_pixel_denoise(opt, poses, images, semantic_images, use_seed=True):
 def apply_region_denoise(opt, poses, images, semantic_images):
     pass
 
+
 def apply_super_resolution(opt, poses, images, semantic_images):
     pass
+
 
 def apply_label_propagation(opt, poses, images, semantic_images):
     pass

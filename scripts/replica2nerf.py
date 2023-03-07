@@ -4,7 +4,6 @@ transform data from replica dataset to ngp format
 
 import numpy as np
 import argparse
-import yaml
 import os
 import math
 import json
@@ -15,8 +14,7 @@ class Replica2NGP:
     def __init__(self, args):
         self.traj_file = args.traj_file
         self.out_file = args.out_file
-        with open(args.config_file, 'r') as f:
-            self.config = yaml.safe_load(f)
+        self.args = args
 
     def __find_instrincts(self):
         pass
@@ -85,8 +83,8 @@ class Replica2NGP:
         return poses
 
     def __set_params_replica(self):
-        self.H = self.config["experiment"]["height"]
-        self.W = self.config["experiment"]["width"]
+        self.H = self.args.h
+        self.W = self.args.w
 
         self.n_pix = self.H * self.W
         self.aspect_ratio = self.W/self.H
@@ -126,6 +124,8 @@ class Replica2NGP:
             frames_item = {}
             frames_item["file_path"] = f"rgb/rgb_{i}.png"
             frames_item["semantic_path"] = f"semantic_class/semantic_class_{i}.png"
+            if self.args.depth:
+                frames_item["depth_path"] = f"depth/depth_{i}.png"
             frames_item["transform_matrix"] = poses[i].tolist()
             result["frames"].append(frames_item)
             
@@ -140,7 +140,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--traj_file", type=str, help='path to traj_w_c.txt')
     parser.add_argument("--out_file", type=str, help='path to output file')
-    parser.add_argument("--config_file", type=str, help='path to config file')
+    parser.add_argument("-w", type=int, default=160, help='width')
+    parser.add_argument("-h", type=int, default=120, help='height')
+    # parser.add_argument("--config_file", type=str, help='path to config file')
+    parser.add_argument("--depth", action='store_true', help='do one need to use provide depth')
     args = parser.parse_args()
     print("[INFO] replica2nerf.py with parameters:")
     print(args)

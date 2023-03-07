@@ -9,6 +9,7 @@ from nerf_model.network import NeRFNetwork
 from nerf_model.semantic_utils import *
 
 from functools import partial
+import wandb
 
 #torch.autograd.set_detect_anomaly(True)
 
@@ -36,6 +37,7 @@ if __name__ == '__main__':
     parser.add_argument('--update_extra_interval', type=int, default=16, help="iter interval to update extra status (only valid when using --cuda_ray)")
     parser.add_argument('--max_ray_batch', type=int, default=4096, help="batch size of rays at inference to avoid OOM (only valid when NOT using --cuda_ray)")
     parser.add_argument('--patch_size', type=int, default=1, help="[experimental] render patches in training, so as to apply LPIPS loss. 1 means disabled, use [64, 32, 16] to enable")
+    parser.add_argument('--lambd', type=float, default=1.0, help="coeff for losses")
 
     ### network backbone options
     parser.add_argument('--fp16', action='store_true', help="use amp mixed precision training")
@@ -114,6 +116,7 @@ if __name__ == '__main__':
     parser.add_argument('--load_saved',  action='store_true', help='use trained noisy labels for training to ensure consistency betwwen experiments')
 
     parser.add_argument('--path_to_save_tm', default="", type=str)
+
 
     opt = parser.parse_args()
 
@@ -214,6 +217,7 @@ if __name__ == '__main__':
             use_checkpoint=opt.ckpt, 
             eval_interval=opt.eval_interval,
             semantic_remap=nerf_dataset.semantic_remap,
+            lambd=opt.lambd,
         )
 
         if opt.gui:
@@ -228,7 +232,14 @@ if __name__ == '__main__':
 
             max_epoch = np.ceil(opt.iters / len(train_loader)).astype(np.int32)
             print(f"[INFO] MAX_EPOCH: {max_epoch}")
+            wandb.init(
+                project="ngp_with_semantic_nerf",
+                name=f"workspace: {opt.workspace}",
+                config=vars(opt)
+            )
+
             trainer.train(train_loader, valid_loader, max_epoch)
+            # trainer.evaluate(valid_loader)
 
             # also test
             test_loader = NeRFDataset(opt, device=device, type='test', semantic_remap=nerf_dataset.semantic_remap).dataloader()
@@ -244,3 +255,5 @@ if __name__ == '__main__':
                 opt.path_to_save_tm = os.path.join(opt.workspace, "time_measurements.json")
             
             tm.save(opt.path_to_save_tm)
+            wandb.run.summary["t_mean_render"] = tm.mean('render')
+            wandb.finish()

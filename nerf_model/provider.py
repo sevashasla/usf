@@ -203,13 +203,28 @@ class NeRFDataset:
             self.poses = []
             self.images = []
             self.semantic_images = []
-            load_spoiled(opt, self.poses, self.images, self.semantic_images)
+            self.depths = []
+            load_spoiled(opt, self.poses, self.images, self.semantic_images, self.depths)
         else:
             # for colmap, manually split a valid set (the first frame).
-            # TODO
             if self.mode == 'colmap':
                 if type == 'train':
-                    train_idx, val_idx = train_test_split(np.arange(len(frames)), test_size=opt.eval_ratio)
+
+                    if np.isclose(opt.eval_ratio, 0.0):
+                        # val_idx = [
+                        #     492, 141, 409,  31, 570, 593, 873, 399, 406, 272, 691,  70, 312,
+                        #     642, 500, 345, 351, 643, 772, 854,  14, 759, 692, 781, 526, 103,
+                        #     158, 721, 458, 549, 150, 567, 717, 403, 656, 866, 362, 389, 830,
+                        #     453, 676, 231,  97, 491, 620, 548, 204,  55,  65, 736, 635, 196,
+                        #     308, 294, 701, 278,  77, 892, 386, 596, 503, 258, 299, 773, 142,
+                        #     624, 523, 884, 775, 475, 842, 622,   8, 771, 380, 553, 862, 144,
+                        #     145, 311, 390, 735, 542,  34, 794, 482, 895, 506,  27, 320
+                        # ]
+                        # train_idx = [0, 60, 120, 200, 305, 552, 764, 899]
+                        train_idx, val_idx = np.arange(len(frames)), []
+                    else:
+                        train_idx, val_idx = train_test_split(np.arange(len(frames)), test_size=opt.eval_ratio, random_state=opt.seed)
+
                     self.train_val_indexer = {
                         "train_idx": train_idx,
                         "val_idx": val_idx
@@ -223,9 +238,11 @@ class NeRFDataset:
             self.poses = []
             self.images = []
             self.semantic_images = []
+            self.depths = []
             for f in tqdm.tqdm(frames, desc=f'Loading {type} data'):
                 f_path = os.path.join(self.root_path, f['file_path'])
                 semantic_path = os.path.join(self.root_path, f['semantic_path'])
+                depth_path = os.path.join(self.root_path, f['depth_path']) if 'depth_path' in f else None
                 if self.mode == 'blender' and '.' not in os.path.basename(f_path):
                     f_path += '.png' # so silly...
 
@@ -257,6 +274,13 @@ class NeRFDataset:
                 semantic = cv2.imread(semantic_path, cv2.IMREAD_UNCHANGED)
                 if semantic.shape[0] != self.H or semantic.shape[1] != self.W:
                     semantic = cv2.resize(semantic, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
+
+                ### depth read
+                if not depth_path is None:
+                    depth = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED) / 1000.0  # uint16 mm depth, then turn depth from mm to meter
+                    if depth.shape[0] != self.H or depth.shape[1] != self.W:
+                        depth = cv2.resize(depth, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
+                    self.depths.append(depth)
 
                 self.poses.append(pose)
                 self.images.append(image)
