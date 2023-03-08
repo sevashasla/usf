@@ -234,7 +234,7 @@ if __name__ == '__main__':
             print(f"[INFO] MAX_EPOCH: {max_epoch}")
             wandb.init(
                 project="ngp_with_semantic_nerf",
-                name=f"workspace: {opt.workspace}",
+                name=f"semantic_ngp: {opt.workspace}",
                 config=vars(opt)
             )
 
