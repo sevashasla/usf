@@ -1,6 +1,7 @@
 import torch
 import argparse
 import json
+import os
 
 from nerf_model.provider import NeRFDataset
 from nerf_model.gui import NeRFGUI
@@ -26,7 +27,8 @@ if __name__ == '__main__':
     parser.add_argument('--eval_ratio', type=float, default=0.2)
 
     ### training options
-    parser.add_argument('--iters', type=int, default=30000, help="training iters")
+    # parser.add_argument('--iters', type=int, default=30000, help="training iters")
+    parser.add_argument('--epochs', type=int, default=20, help="training epochs")
     parser.add_argument('--lr', type=float, default=1e-2, help="initial learning rate")
     parser.add_argument('--ckpt', type=str, default='latest')
     parser.add_argument('--num_rays', type=int, default=4096, help="num rays sampled per image for each training step")
@@ -196,9 +198,10 @@ if __name__ == '__main__':
         print(model)
 
         optimizer = lambda model: torch.optim.Adam(model.get_params(opt.lr), betas=(0.9, 0.99), eps=1e-15)
+        iters = len(train_loader) * opt.epochs
 
         # decay to 0.1 * init_lr at last iter step
-        scheduler = lambda optimizer: optim.lr_scheduler.LambdaLR(optimizer, lambda iter: 0.1 ** min(iter / opt.iters, 1))
+        scheduler = lambda optimizer: optim.lr_scheduler.LambdaLR(optimizer, lambda iter: 0.1 ** min(iter / iters, 1))
 
         metrics = [PSNRMeter(), LPIPSMeter(device=device), SSIMMeter(device=device)]
         segmentation_metrics = [SegmentationMeter(num_semantic_classes)]
@@ -230,15 +233,15 @@ if __name__ == '__main__':
                 semantic_remap=nerf_dataset.semantic_remap,
                 train_val_indexer=nerf_dataset.train_val_indexer).dataloader()
 
-            max_epoch = np.ceil(opt.iters / len(train_loader)).astype(np.int32)
-            print(f"[INFO] MAX_EPOCH: {max_epoch}")
+            print(f"[INFO] MAX_EPOCH: {opt.epochs}, ITERS: {iters}")
             wandb.init(
                 project="ngp_with_semantic_nerf",
-                name=f"semantic_ngp: {opt.workspace}",
+                group="exp_09-03-2023",
+                name=f"semantic_ngp: {os.path.basename(opt.workspace)}",
                 config=vars(opt)
             )
 
-            trainer.train(train_loader, valid_loader, max_epoch)
+            trainer.train(train_loader, valid_loader, opt.epochs)
             # trainer.evaluate(valid_loader)
 
             # also test

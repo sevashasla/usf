@@ -83,8 +83,8 @@ class Replica2NGP:
         return poses
 
     def __set_params_replica(self):
-        self.H = self.args.h
-        self.W = self.args.w
+        self.H = self.args.H
+        self.W = self.args.W
 
         self.n_pix = self.H * self.W
         self.aspect_ratio = self.W/self.H
@@ -140,8 +140,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--traj_file", type=str, help='path to traj_w_c.txt')
     parser.add_argument("--out_file", type=str, help='path to output file')
-    parser.add_argument("-w", type=int, default=160, help='width')
-    parser.add_argument("-h", type=int, default=120, help='height')
+    parser.add_argument("-W", type=int, default=160, help='width')
+    parser.add_argument("-H", type=int, default=120, help='height')
     # parser.add_argument("--config_file", type=str, help='path to config file')
     parser.add_argument("--depth", action='store_true', help='do one need to use provide depth')
     args = parser.parse_args()
