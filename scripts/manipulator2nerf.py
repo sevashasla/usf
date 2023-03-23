@@ -1,5 +1,6 @@
 '''
-transform data from replica dataset to ngp format
+transform data from manipulator dataset https://github.com/danissomo/nerf_ds_recorder
+to ngp format
 '''
 
 import numpy as np
@@ -10,9 +11,9 @@ import json
 from tqdm import trange
 
 
-class Replica2NGP:
+class Manipulator2NGP:
     def __init__(self, args):
-        self.traj_file = args.traj_file
+        self.transforms_files = args.transforms_files
         self.out_file = args.out_file
         self.args = args
 
@@ -42,7 +43,7 @@ class Replica2NGP:
         c = np.dot(a, b)
         # handle exception for the opposite direction input
         if c < -1 + 1e-10:
-            return Replica2NGP.rotmat(a + np.random.uniform(-1e-2, 1e-2, 3), b)
+            return Manipulator2NGP.rotmat(a + np.random.uniform(-1e-2, 1e-2, 3), b)
         s = np.linalg.norm(v)
         kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
         return np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2 + 1e-10))
@@ -53,14 +54,16 @@ class Replica2NGP:
             poses = poses.copy()
         N = poses.shape[0]
 
+        # usual transform
         poses[:, 0:3, 1] *= -1
         poses[:, 0:3, 2] *= -1
         poses = poses[:, [1, 0, 2, 3], :] # swap y and z
         poses[:, 2, :] *= -1 # flip whole world upside down
 
+
         up = poses[:, 0:3, 1].sum(0)
         up = up / np.linalg.norm(up)
-        R = Replica2NGP.rotmat(up, [0, 0, 1]) # rotate up vector to [0,0,1]
+        R = Manipulator2NGP.rotmat(up, [0, 0, 1]) # rotate up vector to [0,0,1]
         R = np.pad(R, [0, 1])
         R[-1, -1] = 1
 
@@ -72,7 +75,7 @@ class Replica2NGP:
             mf = poses[i, :3, :]
             for j in range(i + 1, N):
                 mg = poses[j, :3, :]
-                p, w = Replica2NGP.closest_point_2_lines(mf[:,3], mf[:,2], mg[:,3], mg[:,2])
+                p, w = Manipulator2NGP.closest_point_2_lines(mf[:,3], mf[:,2], mg[:,3], mg[:,2])
                 #print(i, j, p, w)
                 if w > 0.01:
                     totp += p * w
@@ -80,27 +83,45 @@ class Replica2NGP:
         totp /= totw
         poses[:, :3, 3] -= totp
         avglen = np.linalg.norm(poses[:, :3, 3], axis=-1).mean()
+        print(f"[INFO] avglen is {avglen}")
         poses[:, :3, 3] *= 4.0 / avglen
+
+        
+        
+        # poses = poses @ np.linalg.inv(np.array([
+        #     [1, 0, 0, -0.03284863],
+        #     [0, 1, 0, -0.08],
+        #     [0, 0, 1, -0.08414625],
+        #     [0, 0, 0, 1],
+        # ]))
+        
         return poses
 
-    def __set_params_replica(self):
+    def __set_params_intrinsic(self):
         self.H = self.args.H
         self.W = self.args.W
 
         self.n_pix = self.H * self.W
         self.aspect_ratio = self.W/self.H
 
-        self.hfov = 90
+        self.hfov = self.data['camera_angle_x']
         # the pin-hole camera has the same value for fx and fy
-        self.fx = self.W / 2.0 / math.tan(math.radians(self.hfov / 2.0))
+        self.fx = self.W / 2.0 / math.tan(self.hfov / 2.0)
         # self.fy = self.H / 2.0 / math.tan(math.radians(self.yhov / 2.0))
         self.fy = self.fx
-        self.cx = (self.W - 1.0) / 2.0
-        self.cy = (self.H - 1.0) / 2.0
+        self.cx = self.W / 2.0
+        self.cy = self.H / 2.0
     
 
     def transform(self):
-        self.__set_params_replica()
+        with open(self.transforms_files[0]) as f:
+            self.data = json.load(f)
+
+        for file in self.transforms_files[1:]:
+            with open(file) as f:
+                self.data['frames'].extend(json.load(f)['frames'])
+
+        self.__set_params_intrinsic()
         result = {}
         result["fl_x"] = self.fx
         result["fl_y"] = self.fy
@@ -111,44 +132,37 @@ class Replica2NGP:
         result["aabb_scale"] = 2
         result["frames"] = []
 
-        poses = []
-        with open(self.traj_file) as f:
-            while s := f.readline():
-                pose = np.array([float(x) for x in s.split()]).reshape(4, 4)
-                poses.append(pose)
-        
+        poses = [f['transform_matrix'] for f in self.data['frames']]
         poses = np.array(poses)
         poses = self.change_transform_matrix(poses, inplace=False)
-        print("[INFO] poses are prepared!")
 
-        for i in range(len(poses)):
+        for i, f in enumerate(self.data['frames']):
             frames_item = {}
-            frames_item["file_path"] = f"rgb/rgb_{i}.png"
-            frames_item["semantic_path"] = f"semantic_class/semantic_class_{i}.png"
+            frames_item["file_path"] = f['file_path'] + ".png" # add extension
+            frames_item["semantic_path"] = f['file_path'] + "_semantic.png"
             if self.args.depth:
-                frames_item["depth_path"] = f"depth/depth_{i}.png"
+                frames_item["depth_path"] = f['file_path'] + "_depth.png"
             frames_item["transform_matrix"] = poses[i].tolist()
             result["frames"].append(frames_item)
-            
+                    
         with open(self.out_file, "w") as f:
             f.write(json.dumps(result, indent=4))
         
-        print(f"[INFO] transforms.json at: {self.out_file}!")
+        print(f"[INFO] transforms.json at: {self.out_file}")
 
 
 def main():
-    # scale factor is used for evaluation!
     parser = argparse.ArgumentParser()
-    parser.add_argument("--traj_file", type=str, help='path to traj_w_c.txt')
+    parser.add_argument("--transforms_files", nargs='+', type=str, help='paths to transforms.json')
     parser.add_argument("--out_file", type=str, help='path to output file')
     parser.add_argument("-W", type=int, default=160, help='width')
     parser.add_argument("-H", type=int, default=120, help='height')
     # parser.add_argument("--config_file", type=str, help='path to config file')
     parser.add_argument("--depth", action='store_true', help='do one need to use provide depth')
     args = parser.parse_args()
-    print("[INFO] replica2nerf.py with parameters:")
+    print("[INFO] manipulator2nerf.py with parameters:")
     print(args)
-    r2n = Replica2NGP(args)
+    r2n = Manipulator2NGP(args)
     r2n.transform()
 
 main()
