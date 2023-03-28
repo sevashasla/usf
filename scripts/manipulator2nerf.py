@@ -86,7 +86,10 @@ class Manipulator2NGP:
         print(f"[INFO] avglen is {avglen}")
         poses[:, :3, 3] *= 4.0 / avglen
 
-        
+        # just watched it from colmap :)
+        poses[:, 0, :] *= -1
+        poses = poses[:, [1, 0, 2, 3], :]
+
         
         # poses = poses @ np.linalg.inv(np.array([
         #     [1, 0, 0, -0.03284863],
