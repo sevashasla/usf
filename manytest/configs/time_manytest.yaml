@@ -1,0 +1,213 @@
+name: "time-exp-11-04-2023" # name of group in wandb
+place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
+sequences: ["Sequence_1", "Sequence_2"]
+scene_dir: "/mnt/hdd8/Datasets/Replica/semantic_info/"
+dataset_dir: "/mnt/hdd8/Datasets/Replica/"
+store_result: # where to store results
+  semantic_ngp: "/mnt/hdd8/skorokhodov_vs/results/semantic_ngp_results/"
+  torch_ngp: "/mnt/hdd8/skorokhodov_vs/results/torch-ngp_results"
+  semantic_nerf: "/mnt/hdd8/skorokhodov_vs/results/semantic_nerf_results"
+start: # start script
+  semantic_ngp: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/main_nerf.py"
+  torch_ngp: "/home/skorokhodov_vs/nerf/from_laba/torch-ngp/main_nerf.py"
+  semantic_nerf: "/home/skorokhodov_vs/nerf/from_laba/semantic_nerf/train_SSR_main_time_measure.py"
+
+convert_script_path: "/home/skorokhodov_vs/nerf/replica2nerf.py" # script to convert poses to nerf format
+continue_on_fail: False
+gpu: 1
+
+experiments:
+# ### EXPERIMENT 1 ###
+#   -
+#       w: 160
+#       h: 120
+#       place: "room_1"
+#       sequence: "Sequence_1"
+#       torch_ngp:
+#         - 
+        
+#           # epochs: 10
+#           # max_ray_batch: 2048
+#           # num_rays: 512
+#           # num_steps: 96
+
+#       semantic_ngp:
+#         - 
+        
+#         #   epochs: 10
+#         #   max_ray_batch: 2048
+#         #   num_rays: 512
+#         #   num_steps: 96
+#         #   lambd: 0.05
+
+#       semantic_nerf:
+#         - 
+#           render:
+#             N_samples: 64
+#             N_importance: 32
+#             no_batching: false
+#           train:
+#             N_iters: 10
+#           model:
+#             chunk: 2048
+#             netchunk: 2048
+
+# ### EXPERIMENT 2 ###
+#   -
+#       w: 320
+#       h: 240
+#       place: "room_1"
+#       sequence: "Sequence_1"
+#       torch_ngp:
+#         - 
+#           # epochs: 10
+#           # max_ray_batch: 2048
+#           # num_rays: 512
+#           # num_steps: 96
+
+#       semantic_ngp:
+#         - 
+#           epochs: 10
+#           max_ray_batch: 2048
+#           num_rays: 512
+#           num_steps: 96
+#           lambd: 0.05
+
+#       semantic_nerf:
+#         - 
+#           render:
+#             N_samples: 64
+#             N_importance: 32
+#           train:
+#             N_iters: 10
+#           model:
+#             chunk: 2048
+#             netchunk: 2048
+
+# ### EXPERIMENT 3 ###
+#   -
+#       w: 400
+#       h: 300
+#       place: "room_1"
+#       sequence: "Sequence_1"
+#       torch_ngp:
+#         - 
+#           epochs: 10
+#           max_ray_batch: 2048
+#           num_rays: 512
+#           num_steps: 96
+
+#       semantic_ngp:
+#         - 
+#           epochs: 10
+#           max_ray_batch: 2048
+#           num_rays: 512
+#           num_steps: 96
+#           lambd: 0.05
+
+#       semantic_nerf:
+#         - 
+#           render:
+#             N_samples: 64
+#             N_importance: 32
+#           train:
+#             N_iters: 10
+#           model:
+#             chunk: 2048
+#             netchunk: 2048
+
+### EXPERIMENT 4 ###
+  -
+      w: 480
+      h: 360
+      place: "room_1"
+      sequence: "Sequence_1"
+      torch_ngp:
+        - 
+          epochs: 10
+          max_ray_batch: 2048
+          num_rays: 512
+          num_steps: 48
+
+      semantic_ngp:
+        - 
+          # epochs: 10
+          # max_ray_batch: 2048
+          # num_rays: 512
+          # num_steps: 48
+          # lambd: 0.05
+
+      semantic_nerf:
+        # - 
+        #   render:
+        #     N_samples: 32
+        #     N_importance: 16
+        #   train:
+        #     N_iters: 5
+        #   model:
+        #     chunk: 2048
+        #     netchunk: 2048
+
+### EXPERIMENT 5 ###
+  -
+      w: 560
+      h: 420
+      place: "room_1"
+      sequence: "Sequence_1"
+      torch_ngp:
+        - 
+          epochs: 10
+          max_ray_batch: 2048
+          num_rays: 512
+          num_steps: 48
+
+      semantic_ngp:
+        - 
+          epochs: 10
+          max_ray_batch: 2048
+          num_rays: 512
+          num_steps: 48
+          lambd: 0.05
+
+      semantic_nerf:
+        - 
+          render:
+            N_samples: 32
+            N_importance: 16
+          train:
+            N_iters: 5
+          model:
+            chunk: 2048
+            netchunk: 2048
+
+### EXPERIMENT 6 ###
+  -
+      w: 640
+      h: 480
+      place: "room_1"
+      sequence: "Sequence_1"
+      torch_ngp:
+        - 
+          epochs: 10
+          max_ray_batch: 2048
+          num_rays: 512
+          num_steps: 48
+
+      semantic_ngp:
+        - 
+          epochs: 5
+          max_ray_batch: 2048
+          num_rays: 512
+          num_steps: 48
+          lambd: 0.05
+
+      semantic_nerf:
+        - 
+          render:
+            N_samples: 32
+            N_importance: 16
+          train:
+            N_iters: 10
+          model:
+            chunk: 2048
+            netchunk: 2048
