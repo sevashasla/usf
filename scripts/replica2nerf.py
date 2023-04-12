@@ -52,6 +52,7 @@ class Replica2NGP:
         if not inplace:
             poses = poses.copy()
         N = poses.shape[0]
+
         poses[:, 0:3, 1] *= -1
         poses[:, 0:3, 2] *= -1
         poses = poses[:, [1, 0, 2, 3], :] # swap y and z
@@ -117,7 +118,7 @@ class Replica2NGP:
                 poses.append(pose)
         
         poses = np.array(poses)
-        self.change_transform_matrix(poses, inplace=True)
+        poses = self.change_transform_matrix(poses, inplace=False)
         print("[INFO] poses are prepared!")
 
         for i in range(len(poses)):

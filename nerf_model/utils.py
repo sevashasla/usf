@@ -37,6 +37,7 @@ from sklearn.metrics import confusion_matrix
 
 from .time_measure import TimeMeasure
 tm = TimeMeasure()
+from imgviz import label_colormap
 
 def custom_meshgrid(*args):
     # ref: https://pytorch.org/docs/stable/generated/torch.meshgrid.html?highlight=meshgrid#torch.meshgrid
@@ -450,6 +451,9 @@ class Trainer(object):
         self.semantic_remap = semantic_remap
         self.lambd = lambd
 
+        # create colormap
+        self.sem_colormap = label_colormap(opt.total_num_classes)
+
         model.to(self.device)
         if self.world_size > 1:
             model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -845,7 +849,7 @@ class Trainer(object):
             all_preds_smntc = np.stack(all_preds_smntc, axis=0)
             all_preds_depth = np.stack(all_preds_depth, axis=0)
             imageio.mimwrite(os.path.join(save_path, f'{name}_rgb.mp4'), all_preds, fps=25, quality=8, macro_block_size=1)
-            imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), all_preds_smntc, fps=25, quality=8, macro_block_size=1)
+            imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), self.sem_colormap[all_preds_smntc], fps=25, quality=8, macro_block_size=1)
             imageio.mimwrite(os.path.join(save_path, f'{name}_depth.mp4'), all_preds_depth, fps=25, quality=8, macro_block_size=1)
             wandb.log({
                 "video/rgb": wandb.Video(os.path.join(save_path, f'{name}_rgb.mp4'), format="mp4"),

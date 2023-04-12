@@ -50,3 +50,6 @@ class SemanticRemap:
         if not inplace:
             semantic_images = semantic_images.copy()
         return self.__apply_remap(semantic_images, inv=True)
+
+    def __len__(self):
+        return len(self.semantic_classes)

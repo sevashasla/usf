@@ -25,6 +25,8 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--eval_interval', type=int, default=5)
     parser.add_argument('--eval_ratio', type=float, default=0.2)
+    parser.add_argument('--total_num_classes', type=int, default=101) # from replica dataset
+    parser.add_argument('--cuda_num', type=int, default=0)
 
     ### training options
     # parser.add_argument('--iters', type=int, default=30000, help="training iters")
@@ -119,6 +121,10 @@ if __name__ == '__main__':
 
     parser.add_argument('--path_to_save_tm', default="", type=str)
 
+    # wandb
+    parser.add_argument('--group', type=str)
+    parser.add_argument('--resume', type=int, default=-1)
+    parser.add_argument('--wandbdir', type=str, default="/mnt/hdd8/skorokhodov_vs/wandb_logs")
 
     opt = parser.parse_args()
 
@@ -138,6 +144,9 @@ if __name__ == '__main__':
         raise RuntimeError("Must be known if test")
     
     seed_everything(opt.seed)
+
+    # set default device
+    torch.cuda.set_device(opt.cuda_num)
 
     criterion = torch.nn.MSELoss(reduction='none')
     criterion_semantic = torch.nn.CrossEntropyLoss()
@@ -234,12 +243,29 @@ if __name__ == '__main__':
                 train_val_indexer=nerf_dataset.train_val_indexer).dataloader()
 
             print(f"[INFO] MAX_EPOCH: {opt.epochs}, ITERS: {iters}")
-            wandb.init(
-                project="ngp_with_semantic_nerf",
-                group="exp_09-03-2023",
-                name=f"semantic_ngp: {os.path.basename(opt.workspace)}",
-                config=vars(opt)
-            )
+
+            if opt.resume != -1:
+                print(f"[INFO] RESUME: {opt.resume}")
+                wandb.init(
+                    project="ngp_with_semantic_nerf",
+                    group=opt.group,
+                    name=f"semantic_ngp: {os.path.basename(opt.workspace)}",
+                    config={**vars(opt), "mode": "semantic_ngp"},
+                    tags=["semantic_ngp"],
+                    dir=opt.wandbdir,
+                    run_id=opt.resume,
+                    resume="must",
+                )
+
+            else:
+                wandb.init(
+                    project="ngp_with_semantic_nerf",
+                    group=opt.group,
+                    name=f"semantic_ngp: {os.path.basename(opt.workspace)}",
+                    config=vars(opt),
+                    tags=["semantic_ngp"],
+                    dir=opt.wandbdir,
+                )
 
             trainer.train(train_loader, valid_loader, opt.epochs)
             # trainer.evaluate(valid_loader)
@@ -252,7 +278,7 @@ if __name__ == '__main__':
             
             trainer.test(test_loader, write_video=True) # test and save video
             
-            trainer.save_mesh(resolution=256, threshold=10)
+            # trainer.save_mesh(resolution=256, threshold=10)
 
             if opt.path_to_save_tm == '':
                 opt.path_to_save_tm = os.path.join(opt.workspace, "time_measurements.json")
