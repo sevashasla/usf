@@ -113,6 +113,9 @@ class NeRFRenderer(nn.Module):
     def semantic_pred(self, x, mask=None, geo_feat=None, **kwargs):
         raise NotImplementedError()
 
+    def uncertainty_pred(self, x, mask=None, geo_feat=None, **kwargs):
+        raise NotImplementedError()
+
     def reset_extra_state(self):
         if not self.cuda_ray:
             return 
@@ -220,6 +223,8 @@ class NeRFRenderer(nn.Module):
         rgbs = rgbs.view(N, -1, 3) # [N, T+t, 3]
         smntc = self.semantic_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
         smntc = smntc.view(N, -1, self.num_semantic_classes) # [N, T+t, SC]
+        uncert = self.uncertainty_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
+        uncert = uncert.view(N, -1, 1) # [N, T+t, 1]
 
         #print(xyzs.shape, 'valid_rgb:', mask.sum().item())
 
@@ -236,6 +241,10 @@ class NeRFRenderer(nn.Module):
         # calculate semantic: use the same weights!
         semantic_image = torch.sum(weights.unsqueeze(-1) * smntc, dim=-2) # [N, SC]
 
+        # calculate uncertainty: use the same weights!
+        uncertainty_image = torch.sum(weights.unsqueeze(-1) ** 2.0 * uncert, dim=-2)
+
+
         # mix background color
         if self.bg_radius > 0:
             # use the bg model to calculate bg_color
@@ -245,11 +254,12 @@ class NeRFRenderer(nn.Module):
             bg_color = 1
         
         image = image + (1 - weights_sum).unsqueeze(-1) * bg_color
-        # semantic don't depend on bg_color
+        # semantic doesn't depend on bg_color
         # ---
 
         image = image.view(*prefix, 3)
         semantic_image = semantic_image.view(*prefix, self.num_semantic_classes)
+        uncertanty_image = uncertanty_image.view(*prefix, 1)
         depth = depth.view(*prefix)
 
         # tmp: reg loss in mip-nerf 360
@@ -260,7 +270,9 @@ class NeRFRenderer(nn.Module):
         return {
             'depth': depth,
             'image': image,
+            'alphas': alphas, # for loss
             'semantic_image': semantic_image,
+            'uncertainty_image': uncertainty_image,
             'weights_sum': weights_sum,
         }
 
@@ -567,6 +579,7 @@ class NeRFRenderer(nn.Module):
             depth = torch.empty((B, N), device=device)
             image = torch.empty((B, N, 3), device=device)
             semantic_image = torch.empty((B, N, self.num_semantic_classes), device=device)
+            uncertainty_image = torch.empty((B, N, 1), device=device)
 
             for b in range(B):
                 head = 0
@@ -576,12 +589,14 @@ class NeRFRenderer(nn.Module):
                     depth[b:b+1, head:tail] = results_['depth']
                     image[b:b+1, head:tail] = results_['image']
                     semantic_image[b:b+1, head:tail] = results_['semantic_image']
+                    uncertainty_image[b:b+1, head:tail] = results_['uncertainty_image']
                     head += max_ray_batch
             
             results = {}
             results['depth'] = depth
             results['image'] = image
             results['semantic_image'] = semantic_image
+            results['uncertainty_image'] = uncertainty_image
 
         else:
             results = _run(rays_o, rays_d, **kwargs)

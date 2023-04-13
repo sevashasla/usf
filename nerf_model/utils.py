@@ -5,7 +5,6 @@ import math
 import imageio
 import random
 import warnings
-import tensorboardX
 import wandb
 
 import numpy as np
@@ -55,6 +54,21 @@ def linear_to_srgb(x):
 @torch.jit.script
 def srgb_to_linear(x):
     return torch.where(x < 0.04045, x / 12.92, ((x + 0.055) / 1.055) ** 2.4)
+
+
+class UncertaintyLoss(nn.Module):
+    def __init__(self, w):
+        self.w = w
+    
+    def forward(self, pred_rgb, gr_rgb, uncert, alphas):
+        '''
+        calculates likelihood + regularization
+        '''
+        eps = 1e-9
+        first = 0.5 * torch.mean((x - y) ** 2 / (uncert + eps)) 
+        second = 0.5 * torch.mean(torch.log(uncert + eps))
+        third = self.w * alphas.mean() + 4.0
+        return first + second + third
 
 
 @torch.cuda.amp.autocast(enabled=False)
@@ -402,10 +416,12 @@ class Trainer(object):
                  model, # network 
                  criterion=None, # loss function, if None, assume inline implementation in train_step
                  criterion_semantic=None, # loss function for semantic, if None, assume inline implementation in train_step
+                 criterion_uncertainty=None, # loss function for uncertainty, if None, assume inline implementation in train_step
                  optimizer=None, # optimizer
                  ema_decay=None, # if use EMA, set the decay
                  lr_scheduler=None, # scheduler
-                 lambd=1.0,
+                 lambd=1.0, # coeff for semantic loss
+                 omega=1.0, # coeff in for uncertainty loss
                  metrics=[], # metrics for evaluation, if None, use val_loss to measure performance, else use the first metric.
                  segmentation_metrics=[],
                  depth_metrics=[],
@@ -423,8 +439,8 @@ class Trainer(object):
                  use_checkpoint="latest", # which ckpt to use at init time
                  use_tensorboardX=True, # whether to use tensorboard for logging
                  scheduler_update_every_step=False, # whether to call scheduler.step() after every train step
-                 semantic_remap=None, # just dict a dict
-                 ):
+                 semantic_remap=None, # just a dict
+        ):
         
         self.name = name
         self.opt = opt
@@ -450,6 +466,7 @@ class Trainer(object):
         self.console = Console()
         self.semantic_remap = semantic_remap
         self.lambd = lambd
+        self.omega = omega
 
         # create colormap
         self.sem_colormap = label_colormap(opt.total_num_classes)
@@ -467,6 +484,10 @@ class Trainer(object):
         if isinstance(criterion_semantic, nn.Module):
             criterion_semantic.to(self.device)
         self.criterion_semantic = criterion_semantic
+        
+        if isinstance(criterion_uncertainty, nn.Module):
+            criterion_uncertainty.to(self.device)
+        self.criterion_uncertainty = criterion_uncertainty
 
         # optionally use LPIPS loss for patch-based training
         if self.opt.patch_size > 1:
@@ -504,7 +525,7 @@ class Trainer(object):
             }, # metrics[0], or valid_loss
             "checkpoints": [], # record path of saved ckpt, to automatically remove old ckpt
             "best_result": None,
-            }
+        }
 
         # auto fix
         if len(metrics) == 0 or self.use_loss_as_metric:
@@ -565,7 +586,7 @@ class Trainer(object):
                 print(*args, file=self.log_ptr)
                 self.log_ptr.flush() # write immediately to file
 
-    def __clear_metrics(self):
+    def _clear_metrics(self):
         for metric in self.metrics:
             metric.clear()
         for smetric in self.segmentation_metrics:
@@ -590,6 +611,7 @@ class Trainer(object):
             outputs = self.model.render(rays_o, rays_d, staged=False, bg_color=None, perturb=True, force_all_rays=True, **vars(self.opt))
             pred_rgb = outputs['image'].reshape(B, H, W, 3).permute(0, 3, 1, 2).contiguous()
             pred_smntc = outputs['semantic_image']
+            pred_uncert = outputs['semantic_image']
             pred_depth = outputs['depth']
 
             # [debug] uncomment to plot the images used in train_step
@@ -600,6 +622,7 @@ class Trainer(object):
 
         images = data['images'] # [B, N, 3/4]
         semantic_images = data['semantic_images']
+        uncert_images = data['uncert_images']
         B, N, C = images.shape
         SC = self.model.num_semantic_classes # number of semantic classes
 
@@ -626,13 +649,18 @@ class Trainer(object):
     
         pred_rgb = outputs['image']
         pred_smntc = outputs['semantic_image']
+        pred_uncert = outputs['uncertainty_image']
         pred_depth = outputs['depth']
+        pred_alpha = outputs['alpha']
 
         # MSE loss
         loss = self.criterion(pred_rgb, gt_rgb).mean(-1) # [B, N, 3] --> [B, N]
 
         # CrossEntropyLoss
         loss_ce = self.criterion_semantic(pred_smntc.view(B * N, SC), gt_smntc.view(B * N)) # scalar
+
+        # Uncertainty Loss
+        loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
 
         # patch-based rendering
         if self.opt.patch_size > 1:
@@ -675,15 +703,23 @@ class Trainer(object):
 
         loss = loss.mean()
         # they use wieghted loss, but set lambda_ce = 1 it's ok
-        wandb.log({"train/loss": loss.item(), "train/loss_ce": loss_ce.item()})
-        loss = loss + self.lambd * loss_ce
+        wandb.log({"train/loss": loss.item(), "train/loss_ce": loss_ce.item(), "train/loss_uncert": loss_uncert.item()})
+        loss = loss + self.lambd * loss_ce + self.omega * loss_uncert
 
         # extra loss
         # pred_weights_sum = outputs['weights_sum'] + 1e-8
         # loss_ws = - 1e-1 * pred_weights_sum * torch.log(pred_weights_sum) # entropy to encourage weights_sum to be 0 or 1.
         # loss = loss + loss_ws.mean()
 
-        return pred_rgb, gt_rgb, pred_smntc, gt_smntc, pred_depth, loss
+        return {
+            "pred_rgb": pred_rgb, 
+            "gt_rgb": gt_rgb, 
+            "pred_smntc": pred_smntc, 
+            "gt_smntc": gt_smntc, 
+            "pred_depth": pred_depth, 
+            "pred_uncert": pred_uncert, 
+            "loss": loss
+        }
 
     def eval_step(self, data):
 
@@ -709,13 +745,25 @@ class Trainer(object):
 
         pred_rgb = outputs['image'].reshape(B, H, W, 3)
         pred_smntc = outputs['semantic_image'].reshape(B, H, W, SC)
+        pred_uncert = outputs['uncertainty_image'].reshape(B, H, W, 1)
         pred_depth = outputs['depth'].reshape(B, H, W)
+        pred_alpha = outputs['alpha']
+
 
         loss = self.criterion(pred_rgb, gt_rgb).mean()
-        loss_ce = self.criterion_semantic(pred_smntc.view(B * H * W, SC), gt_smntc.view(B*H*W))
-        loss = loss + loss_ce
+        loss_ce = self.criterion_semantic(pred_smntc.view(B * H * W, SC), gt_smntc.view(B * H * W))
+        loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
+        loss = loss + self.lambd * loss_ce + self.omega * loss_uncert
 
-        return pred_rgb, pred_smntc, pred_depth, gt_rgb, gt_smntc, loss
+        return {
+            "pred_rgb": pred_rgb, 
+            "gt_rgb": gt_rgb, 
+            "pred_smntc": pred_smntc, 
+            "gt_smntc": gt_smntc, 
+            "pred_depth": pred_depth, 
+            "pred_uncert": pred_uncert, 
+            "loss": loss
+        }
 
     # moved out bg_color and perturb for more flexible control...
     def test_step(self, data, bg_color=None, perturb=False):  
@@ -733,9 +781,14 @@ class Trainer(object):
 
         pred_rgb = outputs['image'].reshape(-1, H, W, 3)
         pred_smntc = outputs['semantic_image'].reshape(-1, H, W, SC)
+        pred_uncert = outputs['uncertainty_image'].reshape(-1, H, W, 1)
         pred_depth = outputs['depth'].reshape(-1, H, W)
 
-        return pred_rgb, pred_smntc, pred_depth
+        return {
+            "pred_rgb": pred_rgb, 
+            "pred_smntc": pred_smntc, 
+            "pred_depth": pred_depth,
+        }
 
 
     def save_mesh(self, save_path=None, resolution=256, threshold=10):
@@ -763,9 +816,6 @@ class Trainer(object):
     ### ------------------------------
 
     def train(self, train_loader, valid_loader, max_epochs):
-        if self.use_tensorboardX and self.local_rank == 0:
-            self.writer = tensorboardX.SummaryWriter(os.path.join(self.workspace, "run", self.name))
-
         # mark untrained region (i.e., not covered by any camera from the training dataset)
         if self.model.cuda_ray:
             self.model.mark_untrained_grid(train_loader._data.poses, train_loader._data.intrinsics)
@@ -784,16 +834,10 @@ class Trainer(object):
                 self.evaluate_one_epoch(valid_loader)
                 self.save_checkpoint(full=False, best=True)
 
-        if self.use_tensorboardX and self.local_rank == 0:
-            self.writer.close()
-
     def evaluate(self, loader, name=None):
-        self.use_tensorboardX, use_tensorboardX = False, self.use_tensorboardX
         self.evaluate_one_epoch(loader, name)
-        self.use_tensorboardX = use_tensorboardX
 
     def test(self, loader, save_path=None, name=None, write_video=True):
-
         if save_path is None:
             save_path = os.path.join(self.workspace, 'results')
 
@@ -810,6 +854,7 @@ class Trainer(object):
         if write_video:
             all_preds = []
             all_preds_smntc = []
+            all_preds_uncert = []
             all_preds_depth = []
 
         with torch.no_grad():
@@ -817,7 +862,12 @@ class Trainer(object):
             for i, data in enumerate(loader):
                 
                 with torch.cuda.amp.autocast(enabled=self.fp16):
-                    preds, pred_smntc, preds_depth = self.test_step(data)
+                    full_pred_test = self.test_step(data)
+                    preds = full_pred_test['pred_rgb']
+                    preds_smntc = full_pred_test['pred_smntc']
+                    preds_uncert = full_pred_test['pred_uncert']
+                    preds_depth = full_pred_test['pred_rgb']
+                    
 
                 if self.opt.color_space == 'linear':
                     preds = linear_to_srgb(preds)
@@ -825,8 +875,10 @@ class Trainer(object):
                 pred = preds[0].detach().cpu().numpy()
                 pred = (pred * 255).astype(np.uint8)
 
-                pred_smntc = pred_smntc[0].detach().cpu().numpy()
+                pred_smntc = preds_smntc[0].detach().cpu().numpy()
                 pred_smntc = pred_smntc.argmax(axis=-1).astype(np.uint8)
+
+                pred_uncert = preds_uncert[0].detach().cpu().numpy()
 
                 pred_depth = preds_depth[0].detach().cpu().numpy()
                 pred_depth = (pred_depth * 255).astype(np.uint8)
@@ -836,10 +888,12 @@ class Trainer(object):
                 if write_video:
                     all_preds.append(pred)
                     all_preds_smntc.append(pred_smntc)
+                    all_preds_uncert.append(pred_uncert)
                     all_preds_depth.append(pred_depth)
                 else:
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_rgb.png'), cv2.cvtColor(pred, cv2.COLOR_RGB2BGR))
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_smntc.png'), pred_smntc)
+                    cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_uncert.png'), pred_uncert)
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_depth.png'), pred_depth)
 
                 pbar.update(loader.batch_size)
@@ -847,13 +901,16 @@ class Trainer(object):
         if write_video:
             all_preds = np.stack(all_preds, axis=0)
             all_preds_smntc = np.stack(all_preds_smntc, axis=0)
+            all_preds_uncert = np.stack(all_preds_uncert, axis=0)
             all_preds_depth = np.stack(all_preds_depth, axis=0)
-            imageio.mimwrite(os.path.join(save_path, f'{name}_rgb.mp4'), all_preds, fps=25, quality=8, macro_block_size=1)
-            imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), self.sem_colormap[all_preds_smntc], fps=25, quality=8, macro_block_size=1)
-            imageio.mimwrite(os.path.join(save_path, f'{name}_depth.mp4'), all_preds_depth, fps=25, quality=8, macro_block_size=1)
+            imageio.mimwrite(os.path.join(save_path, f'{name}_rgb.mp4'), all_preds, fps=10, quality=8, macro_block_size=1)
+            imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), self.sem_colormap[all_preds_smntc], fps=10, quality=8, macro_block_size=1)
+            imageio.mimwrite(os.path.join(save_path, f'{name}_uncert.mp4'), all_preds_uncert, fps=10, quality=8, macro_block_size=1)
+            imageio.mimwrite(os.path.join(save_path, f'{name}_depth.mp4'), all_preds_depth, fps=10, quality=8, macro_block_size=1)
             wandb.log({
                 "video/rgb": wandb.Video(os.path.join(save_path, f'{name}_rgb.mp4'), format="mp4"),
                 "video/semantic": wandb.Video(os.path.join(save_path, f'{name}_smntc.mp4'), format="mp4"),
+                "video/uncert": wandb.Video(os.path.join(save_path, f'{name}_uncert.mp4'), format="mp4"),
                 "video/depth": wandb.Video(os.path.join(save_path, f'{name}_depth.mp4'), format="mp4"),
             })
 
@@ -981,7 +1038,7 @@ class Trainer(object):
 
         total_loss = 0
         if self.local_rank == 0 and self.report_metric_at_train:
-            self.__clear_metrics()
+            self._clear_metrics()
 
         self.model.train()
 
@@ -1008,7 +1065,15 @@ class Trainer(object):
             self.optimizer.zero_grad()
 
             with torch.cuda.amp.autocast(enabled=self.fp16):
-                preds, truths, preds_smntc, gt_smntc, pred_depth, loss = self.train_step(data)
+                full_pred_train = self.train_step(data)
+
+                preds = full_pred_train["pred_rgb"]
+                truths = full_pred_train["truths"]
+                preds_smntc = full_pred_train["pred_smntc"]
+                gt_smntc = full_pred_train["gt_smntc"]
+                preds_uncert = full_pred_train["pred_uncert"]
+                pred_depth = full_pred_train["pred_depth"]
+                loss = full_pred_train["loss"]
          
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
@@ -1028,10 +1093,6 @@ class Trainer(object):
                         smetric.update(preds_smntc, gt_smntc)
                     for dmetric in self.depth_metrics:
                         dmetric.update(pred_depth, ...)
-                        
-                if self.use_tensorboardX:
-                    self.writer.add_scalar("train/loss", loss_val, self.global_step)
-                    self.writer.add_scalar("train/lr", self.optimizer.param_groups[0]['lr'], self.global_step)
 
                 if self.scheduler_update_every_step:
                     pbar.set_description(f"loss={loss_val:.4f} ({total_loss/self.local_step:.4f}), lr={self.optimizer.param_groups[0]['lr']:.6f}")
@@ -1052,15 +1113,13 @@ class Trainer(object):
                 for metric in self.metrics:
                     self.log(metric.report(), style="red")
                     metrics_to_report.update(metric.wandb_log("train"))
-                    if self.use_tensorboardX:
-                        metric.write(self.writer, self.epoch, prefix="train")
                 for smetric in self.segmentation_metrics:
                     self.log(smetric.report(), style="red")
                     metrics_to_report.update(smetric.wandb_log("train"))
                 for dmetric in self.depth_metrics:
                     self.log(dmetric.report(), style="red")
                     metrics_to_report.update(dmetric.wandb_log("train"))
-                self.__clear_metrics()
+                self._clear_metrics()
                 wandb.log(metrics_to_report)
 
         if not self.scheduler_update_every_step:
@@ -1080,7 +1139,7 @@ class Trainer(object):
 
         total_loss = 0
         if self.local_rank == 0:
-            self.__clear_metrics()
+            self._clear_metrics()
         self.model.eval()
 
         if self.ema is not None:
@@ -1097,7 +1156,15 @@ class Trainer(object):
                 self.local_step += 1
 
                 with torch.cuda.amp.autocast(enabled=self.fp16):
-                    preds, preds_smntc, preds_depth, truths, gt_smntc, loss = self.eval_step(data)
+                    full_pred_eval = self.eval_step(data)
+                    preds = full_pred_eval["pred_rgb"]
+                    truths = full_pred_eval["truths"]
+                    preds_smntc = full_pred_eval["preds_smntc"]
+                    gt_smntc = full_pred_eval["gt_smntc"]
+                    preds_uncert = full_pred_train["pred_uncert"]
+                    preds_depth = full_pred_eval["preds_depth"]
+                    loss = full_pred_eval["loss"]
+                    
 
                 # all_gather/reduce the statistics (NCCL only support all_*)
                 if self.world_size > 1:
@@ -1111,6 +1178,10 @@ class Trainer(object):
                     preds_smntc_list = [torch.zeros_like(preds_smntc).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
                     dist.all_gather(preds_smntc_list, preds_smntc)
                     preds_smntc = torch.cat(preds_smntc_list, dim=0)
+
+                    preds_uncert_list = [torch.zeros_like(preds_uncert).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
+                    dist.all_gather(preds_uncert_list, preds_uncert)
+                    preds_uncert = torch.cat(preds_uncert_list, dim=0)
 
                     preds_depth_list = [torch.zeros_like(preds_depth).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
                     dist.all_gather(preds_depth_list, preds_depth)
@@ -1139,6 +1210,7 @@ class Trainer(object):
                     # save image
                     save_path = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_rgb.png')
                     save_path_smntc = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_smntc.png')
+                    save_path_uncert = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_uncert.png')
                     save_path_depth = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_depth.png')
 
                     #self.log(f"==> Saving validation image to {save_path}")
@@ -1153,11 +1225,14 @@ class Trainer(object):
                     pred_smntc = preds_smntc[0].detach().cpu().numpy()
                     pred_smntc = pred_smntc.argmax(axis=-1).astype(np.uint8)
 
+                    pred_uncert = preds_uncert[0].detach().cpu().numpy()
+
                     pred_depth = preds_depth[0].detach().cpu().numpy()
                     pred_depth = (pred_depth * 255).astype(np.uint8)
                     
                     cv2.imwrite(save_path, cv2.cvtColor(pred, cv2.COLOR_RGB2BGR))
                     cv2.imwrite(save_path_smntc, pred_smntc)
+                    cv2.imwrite(save_path_uncert, pred_uncert)
                     cv2.imwrite(save_path_depth, pred_depth)
 
                     pbar.set_description(f"loss={loss_val:.4f} ({total_loss/self.local_step:.4f})")
@@ -1182,19 +1257,18 @@ class Trainer(object):
             if not self.use_loss_as_metric and len(self.depth_metrics) > 0:
                 result = self.depth_metrics[0].report()
                 self.stats["results"]['depth_metrics'].append(result)
+            # calculate metrics
             metrics_to_report = {}
             for metric in self.metrics:    
                 metrics_to_report.update(metric.wandb_log("eval"))
                 self.log(metric.report(), style="blue")
-                if self.use_tensorboardX:
-                    metric.write(self.writer, self.epoch, prefix="evaluate")
             for smetric in self.segmentation_metrics:
                 metrics_to_report.update(smetric.wandb_log("eval"))
                 self.log(smetric.report(), style="blue")
             for dmetric in self.depth_metrics:
                 metrics_to_report.update(dmetric.wandb_log("eval"))
                 self.log(dmetric.report(), style="blue")
-            self.__clear_metrics()
+            self._clear_metrics()
             wandb.log(metrics_to_report)
 
         if self.ema is not None:

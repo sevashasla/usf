@@ -19,9 +19,14 @@ class NeRFNetwork(NeRFRenderer):
                  hidden_dim_color=64,
                  num_layers_bg=2,
                  hidden_dim_bg=64,
+                 # semantic
                  num_semantic_classes=-1,
                  num_layers_semantic=2,
                  hidden_dim_semantic=64,
+                 # uncertainty
+                 beta_min=0.01,
+                 num_layers_uncertainty=2,
+                 hidden_dim_uncertainty=64,
                  bound=1,
                  **kwargs,
                  ):
@@ -115,6 +120,24 @@ class NeRFNetwork(NeRFRenderer):
         else:
             raise Exception("Should use semantic here")
         
+        # uncertainty color
+        self.beta_min = beta_min
+        self.num_layers_uncertainty = num_layers_uncertainty
+        self.hidden_dim_uncertainty = hidden_dim_uncertainty
+        uncertainty_net = []
+        for l in range(num_layers_semantic):
+            if l == 0:
+                in_dim = self.geo_feat_dim
+            else:
+                in_dim = self.hidden_dim_uncertainty
+
+            if l == num_layers_semantic - 1:
+                out_dim = 1 # 1 for uncertainty
+            else:
+                out_dim = self.hidden_dim_uncertainty
+            semantic_net.append(nn.Linear(in_dim, out_dim, bias=False))
+        self.uncertainty_net = nn.ModuleList(uncertainty_net)
+        
 
     def forward(self, x, d):
         # x: [N, 3], in [-bound, bound]
@@ -148,11 +171,20 @@ class NeRFNetwork(NeRFRenderer):
         h = geo_feat
         for l in range(self.num_layers_semantic):
             h = self.semantic_net[l](h)
-            if l != self.num_layers_color - 1:
+            if l != self.num_layers_semantic - 1:
                 h = F.relu(h, inplace=True)
         semantic = h
 
-        return sigma, color, semantic
+        # uncertainty
+        h = geo_feat
+        for l in range(self.num_layers_uncertainty):
+            h = self.uncertainty_net[l](h)
+            if l != self.num_layers_uncertainty - 1:
+                h = F.relu(h, inplace=True)
+        # as in https://github.com/LeapLabTHU/ActiveNeRF/blob/83f1329c0d9c49e4e11ca1d23dd17cf184625d28/run_nerf_helpers.py#L115
+        uncertainty = self.beta_min + F.softplus(h)
+
+        return sigma, color, semantic, uncertainty
 
     def density(self, x):
         # x: [N, 3], in [-bound, bound]
@@ -246,6 +278,35 @@ class NeRFNetwork(NeRFRenderer):
 
         return smntc
 
+    def uncertainty_pred(self, x, mask=None, geo_feat=None, **kwargs):
+        # x: [N, 3] in [-bound, bound]
+        # mask: [N,], bool, indicates where we actually needs to compute rgb.
+
+        if mask is not None:
+            uncert = torch.zeros(mask.shape[0], 1, dtype=x.dtype, device=x.device) # [N, 3]
+            # in case of empty mask
+            if not mask.any():
+                return uncert
+            x = x[mask]
+            d = d[mask]
+            geo_feat = geo_feat[mask]
+
+        h = geo_feat
+        for l in range(self.num_layers_uncertainty):
+            h = self.uncertainty_net[l](h)
+            if l != self.num_layers_uncertainty - 1:
+                h = F.relu(h, inplace=True)
+
+        # activation for uncertainty
+        h = self.beta_min + F.softplus(h)
+
+        if mask is not None:
+            uncert[mask] = h.to(uncert.dtype) # fp16 --> fp32
+        else:
+            uncert = h
+
+        return uncert
+
 
     # optimizer utils
     def get_params(self, lr):
@@ -256,6 +317,7 @@ class NeRFNetwork(NeRFRenderer):
             {'params': self.encoder_dir.parameters(), 'lr': lr},
             {'params': self.color_net.parameters(), 'lr': lr}, 
             {'params': self.semantic_net.parameters(), 'lr': lr}, 
+            {'params': self.uncertainty_net.parameters(), 'lr': lr}, 
         ]
         if self.bg_radius > 0:
             params.append({'params': self.encoder_bg.parameters(), 'lr': lr})
