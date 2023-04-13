@@ -76,6 +76,11 @@ if __name__ == '__main__':
     parser.add_argument('--num_semantic_classes', type=int, required=False, help="number of semantic classes")
     parser.add_argument('--semantic_remap', type=json.loads, required=False, help="remap for semantic classes")
 
+    # uncertrainty
+    parser.add_argument('--alpha_uncert', type=float, default=0.01, help="coeff inside UncertaintyLoss")
+    parser.add_argument('--beta_min', type=float, default=0.01, help="beta_min in NeRFNetwork, min of uncertainty")
+    parser.add_argument('--omega', type=float, default=1.0, help="weight of UncertaintyLoss")
+
     ### SPECIAL PARAMETERS
     # sparse-views
     parser.add_argument("--sparse_views", action='store_true',
@@ -146,7 +151,8 @@ if __name__ == '__main__':
 
     criterion = torch.nn.MSELoss(reduction='none')
     criterion_semantic = torch.nn.CrossEntropyLoss()
-    #criterion = partial(huber_loss, reduction='none')
+    criterion_uncertainty = UncertaintyLoss(opt.alpha_uncert)
+    #criterion float partial(educticoeff inside UncertaintyLoss')
     #criterion = torch.nn.HuberLoss(reduction='none', beta=0.1) # only available after torch 1.10 ?
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -161,6 +167,7 @@ if __name__ == '__main__':
             density_thresh=opt.density_thresh,
             bg_radius=opt.bg_radius,
             num_semantic_classes=opt.num_semantic_classes,
+            beta_min=opt.beta_min,
         )
 
         metrics = [PSNRMeter(), LPIPSMeter(device=device), SSIMMeter(device=device)]
@@ -171,7 +178,8 @@ if __name__ == '__main__':
             'ngp', opt, model, 
             device=device, workspace=opt.workspace, 
             criterion=criterion, 
-            criterion_semantic=criterion_semantic, 
+            criterion_semantic=criterion_semantic, lambd=opt.lambd, 
+            criterion_uncertainty=criterion_uncertainty, omega=opt.omega, 
             fp16=opt.fp16, 
             metrics=metrics, segmentation_metrics=segmentation_metrics, depth_metrics=depth_metrics,
             use_checkpoint=opt.ckpt,
@@ -198,6 +206,7 @@ if __name__ == '__main__':
             density_thresh=opt.density_thresh,
             bg_radius=opt.bg_radius,
             num_semantic_classes=num_semantic_classes,
+            beta_min=opt.beta_min,
         )
 
         print(model)
@@ -218,14 +227,14 @@ if __name__ == '__main__':
             device=device, workspace=opt.workspace, 
             optimizer=optimizer, 
             criterion=criterion, 
-            criterion_semantic=criterion_semantic, 
+            criterion_semantic=criterion_semantic, lambd=opt.lambd, 
+            criterion_uncertainty=criterion_uncertainty, omega=opt.omega, 
             ema_decay=0.95, fp16=opt.fp16, 
             lr_scheduler=scheduler, scheduler_update_every_step=True, 
             metrics=metrics, segmentation_metrics=segmentation_metrics, depth_metrics=depth_metrics, 
             use_checkpoint=opt.ckpt, 
             eval_interval=opt.eval_interval,
             semantic_remap=nerf_dataset.semantic_remap,
-            lambd=opt.lambd,
         )
 
         if opt.gui:

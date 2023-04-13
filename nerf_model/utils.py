@@ -749,7 +749,6 @@ class Trainer(object):
         pred_depth = outputs['depth'].reshape(B, H, W)
         pred_alpha = outputs['alpha']
 
-
         loss = self.criterion(pred_rgb, gt_rgb).mean()
         loss_ce = self.criterion_semantic(pred_smntc.view(B * H * W, SC), gt_smntc.view(B * H * W))
         loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
