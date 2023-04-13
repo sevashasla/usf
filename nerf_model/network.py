@@ -125,17 +125,17 @@ class NeRFNetwork(NeRFRenderer):
         self.num_layers_uncertainty = num_layers_uncertainty
         self.hidden_dim_uncertainty = hidden_dim_uncertainty
         uncertainty_net = []
-        for l in range(num_layers_semantic):
+        for l in range(num_layers_uncertainty):
             if l == 0:
                 in_dim = self.geo_feat_dim
             else:
                 in_dim = self.hidden_dim_uncertainty
 
-            if l == num_layers_semantic - 1:
+            if l == num_layers_uncertainty - 1:
                 out_dim = 1 # 1 for uncertainty
             else:
                 out_dim = self.hidden_dim_uncertainty
-            semantic_net.append(nn.Linear(in_dim, out_dim, bias=False))
+            uncertainty_net.append(nn.Linear(in_dim, out_dim, bias=False))
         self.uncertainty_net = nn.ModuleList(uncertainty_net)
         
 
@@ -288,7 +288,6 @@ class NeRFNetwork(NeRFRenderer):
             if not mask.any():
                 return uncert
             x = x[mask]
-            d = d[mask]
             geo_feat = geo_feat[mask]
 
         h = geo_feat

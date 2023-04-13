@@ -259,7 +259,7 @@ class NeRFRenderer(nn.Module):
 
         image = image.view(*prefix, 3)
         semantic_image = semantic_image.view(*prefix, self.num_semantic_classes)
-        uncertanty_image = uncertanty_image.view(*prefix, 1)
+        uncertainty_image = uncertainty_image.view(*prefix, 1)
         depth = depth.view(*prefix)
 
         # tmp: reg loss in mip-nerf 360

@@ -58,14 +58,15 @@ def srgb_to_linear(x):
 
 class UncertaintyLoss(nn.Module):
     def __init__(self, w):
+        super().__init__()
         self.w = w
     
-    def forward(self, pred_rgb, gr_rgb, uncert, alphas):
+    def forward(self, pred_rgb, gt_rgb, uncert, alphas):
         '''
         calculates likelihood + regularization
         '''
         eps = 1e-9
-        first = 0.5 * torch.mean((x - y) ** 2 / (uncert + eps)) 
+        first = 0.5 * torch.mean((pred_rgb - gt_rgb) ** 2 / (uncert + eps)) 
         second = 0.5 * torch.mean(torch.log(uncert + eps))
         third = self.w * alphas.mean() + 4.0
         return first + second + third
@@ -622,7 +623,6 @@ class Trainer(object):
 
         images = data['images'] # [B, N, 3/4]
         semantic_images = data['semantic_images']
-        uncert_images = data['uncert_images']
         B, N, C = images.shape
         SC = self.model.num_semantic_classes # number of semantic classes
 
@@ -651,7 +651,7 @@ class Trainer(object):
         pred_smntc = outputs['semantic_image']
         pred_uncert = outputs['uncertainty_image']
         pred_depth = outputs['depth']
-        pred_alpha = outputs['alpha']
+        pred_alpha = outputs['alphas']
 
         # MSE loss
         loss = self.criterion(pred_rgb, gt_rgb).mean(-1) # [B, N, 3] --> [B, N]
@@ -747,7 +747,7 @@ class Trainer(object):
         pred_smntc = outputs['semantic_image'].reshape(B, H, W, SC)
         pred_uncert = outputs['uncertainty_image'].reshape(B, H, W, 1)
         pred_depth = outputs['depth'].reshape(B, H, W)
-        pred_alpha = outputs['alpha']
+        pred_alpha = outputs['alphas']
 
         loss = self.criterion(pred_rgb, gt_rgb).mean()
         loss_ce = self.criterion_semantic(pred_smntc.view(B * H * W, SC), gt_smntc.view(B * H * W))
@@ -1065,9 +1065,8 @@ class Trainer(object):
 
             with torch.cuda.amp.autocast(enabled=self.fp16):
                 full_pred_train = self.train_step(data)
-
                 preds = full_pred_train["pred_rgb"]
-                truths = full_pred_train["truths"]
+                truths = full_pred_train["gt_rgb"]
                 preds_smntc = full_pred_train["pred_smntc"]
                 gt_smntc = full_pred_train["gt_smntc"]
                 preds_uncert = full_pred_train["pred_uncert"]
@@ -1157,11 +1156,11 @@ class Trainer(object):
                 with torch.cuda.amp.autocast(enabled=self.fp16):
                     full_pred_eval = self.eval_step(data)
                     preds = full_pred_eval["pred_rgb"]
-                    truths = full_pred_eval["truths"]
-                    preds_smntc = full_pred_eval["preds_smntc"]
+                    truths = full_pred_eval["gt_rgb"]
+                    preds_smntc = full_pred_eval["pred_smntc"]
                     gt_smntc = full_pred_eval["gt_smntc"]
                     preds_uncert = full_pred_train["pred_uncert"]
-                    preds_depth = full_pred_eval["preds_depth"]
+                    preds_depth = full_pred_eval["pred_depth"]
                     loss = full_pred_eval["loss"]
                     
 

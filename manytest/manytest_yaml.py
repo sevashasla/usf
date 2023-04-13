@@ -222,16 +222,18 @@ def main():
     for exp in exp_configs["experiments"]:
         # prepare the experiment
         w, h = exp["w"], exp["h"]
+        need_transforms = exp.get("need_transforms", True)
         place = exp["place"]
         sequence = exp["sequence"]
         scene_file = os.path.join(exp_configs["scene_dir"], place)
         datapath = os.path.join(dataset_dir, place, sequence)
-        create_transforms(convert_script_path, datapath, w=w, h=h)
+        if need_transforms:
+            create_transforms(convert_script_path, datapath, w=w, h=h)
 
         runners = []
         for i, torch_ngp_exp_config in enumerate(exp["torch_ngp"]):
             config = deepcopy(torch_ngp_exp_config)
-            if torch_ngp_exp_config is None or not config.pop("do_run"):
+            if config is None or not config.pop("do_run", True):
                 continue
             TorchNgpRunner.prepare_config(
                 config, 
@@ -244,7 +246,7 @@ def main():
 
         for i, semantic_ngp_exp_config in enumerate(exp["semantic_ngp"]):
             config = deepcopy(semantic_ngp_exp_config)
-            if semantic_ngp_exp_config is None or not config.pop("do_run"):
+            if config is None or not config.pop("do_run", True):
                 continue
             SemanticNgpRunner.prepare_config(
                 config, 
@@ -257,7 +259,7 @@ def main():
 
         for i, semantic_nerf_exp_config in enumerate(exp["semantic_nerf"]):
             config = deepcopy(semantic_nerf_exp_config)
-            if semantic_nerf_exp_config is None or not config.pop("do_run"):
+            if config is None or not config.pop("do_run", True):
                 continue
             SemanticNeRFRunner.prepare_config(
                 config, 

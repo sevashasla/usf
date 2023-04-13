@@ -249,27 +249,16 @@ if __name__ == '__main__':
 
             print(f"[INFO] MAX_EPOCH: {opt.epochs}, ITERS: {iters}")
 
-            if opt.resume != -1:
-                print(f"[INFO] RESUME: {opt.resume}")
-                wandb.init(
-                    project="ngp_with_semantic_nerf",
-                    group=opt.group,
-                    name=f"semantic_ngp: {os.path.basename(opt.workspace)}",
-                    config={**vars(opt), "mode": "semantic_ngp"},
-                    tags=["semantic_ngp"],
-                    dir=opt.wandbdir,
-                    resume=True,
-                )
-
-            else:
-                wandb.init(
-                    project="ngp_with_semantic_nerf",
-                    group=opt.group,
-                    name=f"semantic_ngp: {os.path.basename(opt.workspace)}",
-                    config=vars(opt),
-                    tags=["semantic_ngp"],
-                    dir=opt.wandbdir,
-                )
+            print(f"[INFO] RESUME: {opt.resume}")
+            wandb.init(
+                project="ngp_with_semantic_nerf",
+                group=opt.group,
+                name=f"semantic_ngp: {os.path.basename(opt.workspace)}",
+                config={**vars(opt), "mode": "semantic_ngp"},
+                tags=["semantic_ngp"],
+                dir=opt.wandbdir,
+                resume=opt.resume,
+            )
 
             trainer.train(train_loader, valid_loader, opt.epochs)
             # trainer.evaluate(valid_loader)
