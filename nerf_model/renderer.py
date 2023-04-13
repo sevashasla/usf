@@ -580,6 +580,7 @@ class NeRFRenderer(nn.Module):
             image = torch.empty((B, N, 3), device=device)
             semantic_image = torch.empty((B, N, self.num_semantic_classes), device=device)
             uncertainty_image = torch.empty((B, N, 1), device=device)
+            alphas = torch.empty((B, N, kwargs['num_steps'] + kwargs['upsample_steps']), device=device)
 
             for b in range(B):
                 head = 0
@@ -590,6 +591,7 @@ class NeRFRenderer(nn.Module):
                     image[b:b+1, head:tail] = results_['image']
                     semantic_image[b:b+1, head:tail] = results_['semantic_image']
                     uncertainty_image[b:b+1, head:tail] = results_['uncertainty_image']
+                    alphas[b:b+1, head:tail] = results_['alphas']
                     head += max_ray_batch
             
             results = {}
@@ -597,6 +599,7 @@ class NeRFRenderer(nn.Module):
             results['image'] = image
             results['semantic_image'] = semantic_image
             results['uncertainty_image'] = uncertainty_image
+            results['alphas'] = alphas
 
         else:
             results = _run(rays_o, rays_d, **kwargs)

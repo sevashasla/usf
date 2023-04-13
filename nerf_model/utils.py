@@ -45,6 +45,12 @@ def custom_meshgrid(*args):
     else:
         return torch.meshgrid(*args, indexing='ij')
 
+def linear_transform(image, lower=0.0, upper=255.0):
+    image_min = image.min()
+    image_max = image.max()
+
+    convert_01 = (image - image_min) / (image_max - image_min + 1e-9)
+    return lower + convert_01 + upper
 
 @torch.jit.script
 def linear_to_srgb(x):
@@ -659,7 +665,7 @@ class Trainer(object):
         # CrossEntropyLoss
         loss_ce = self.criterion_semantic(pred_smntc.view(B * N, SC), gt_smntc.view(B * N)) # scalar
 
-        # Uncertainty Loss
+        # UncertaintyLoss
         loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
 
         # patch-based rendering
@@ -786,6 +792,7 @@ class Trainer(object):
         return {
             "pred_rgb": pred_rgb, 
             "pred_smntc": pred_smntc, 
+            "pred_uncert": pred_uncert,
             "pred_depth": pred_depth,
         }
 
@@ -877,7 +884,8 @@ class Trainer(object):
                 pred_smntc = preds_smntc[0].detach().cpu().numpy()
                 pred_smntc = pred_smntc.argmax(axis=-1).astype(np.uint8)
 
-                pred_uncert = preds_uncert[0].detach().cpu().numpy()
+                pred_uncert = preds_uncert[0].detach().cpu().numpy().astype(np.uint8)
+                # pred_uncert = linear_transform(pred_uncert, 0.0, 255.0).astype(np.uint8)
 
                 pred_depth = preds_depth[0].detach().cpu().numpy()
                 pred_depth = (pred_depth * 255).astype(np.uint8)
@@ -1159,7 +1167,7 @@ class Trainer(object):
                     truths = full_pred_eval["gt_rgb"]
                     preds_smntc = full_pred_eval["pred_smntc"]
                     gt_smntc = full_pred_eval["gt_smntc"]
-                    preds_uncert = full_pred_train["pred_uncert"]
+                    preds_uncert = full_pred_eval["pred_uncert"]
                     preds_depth = full_pred_eval["pred_depth"]
                     loss = full_pred_eval["loss"]
                     

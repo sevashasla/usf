@@ -32,11 +32,27 @@ experiments:
 
       semantic_ngp:
         - 
-          epochs: 100
+          epochs: 10
           max_ray_batch: 2048
           num_rays: 1024
           num_steps: 512
           lambd: 0.01
-          omega: 1.0
-          resume: True
+          omega: 0.1
+          do_run: False
+
+        - 
+          epochs: 300
+          max_ray_batch: 2048
+          num_rays: 1024
+          num_steps: 512
+          lambd: 0.01
+          omega: 0.1
+
+        - 
+          epochs: 300
+          max_ray_batch: 2048
+          num_rays: 1024
+          num_steps: 512
+          lambd: 0.01
+          omega: 0.01
          
