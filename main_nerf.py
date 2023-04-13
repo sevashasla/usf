@@ -26,7 +26,6 @@ if __name__ == '__main__':
     parser.add_argument('--eval_interval', type=int, default=5)
     parser.add_argument('--eval_ratio', type=float, default=0.2)
     parser.add_argument('--total_num_classes', type=int, default=101) # from replica dataset
-    parser.add_argument('--cuda_num', type=int, default=0)
 
     ### training options
     # parser.add_argument('--iters', type=int, default=30000, help="training iters")
@@ -123,7 +122,7 @@ if __name__ == '__main__':
 
     # wandb
     parser.add_argument('--group', type=str)
-    parser.add_argument('--resume', type=int, default=-1)
+    parser.add_argument('--resume', action="store_true")
     parser.add_argument('--wandbdir', type=str, default="/mnt/hdd8/skorokhodov_vs/wandb_logs")
 
     opt = parser.parse_args()
@@ -144,9 +143,6 @@ if __name__ == '__main__':
         raise RuntimeError("Must be known if test")
     
     seed_everything(opt.seed)
-
-    # set default device
-    torch.cuda.set_device(opt.cuda_num)
 
     criterion = torch.nn.MSELoss(reduction='none')
     criterion_semantic = torch.nn.CrossEntropyLoss()
@@ -253,8 +249,7 @@ if __name__ == '__main__':
                     config={**vars(opt), "mode": "semantic_ngp"},
                     tags=["semantic_ngp"],
                     dir=opt.wandbdir,
-                    run_id=opt.resume,
-                    resume="must",
+                    resume=True,
                 )
 
             else:

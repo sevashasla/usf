@@ -68,6 +68,7 @@ experiments:
           num_steps: 512
           lambd: 0.01
           do_run: True
+          resume: True
 
         - 
           epochs: 600

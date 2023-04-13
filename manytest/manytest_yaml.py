@@ -23,11 +23,11 @@ class NgpRunner:
                 params[k] = v
         return params
 
-    def run(self):
+    def run(self, gpu):
         path_from = os.path.dirname(self.start)
         print(f"[INFO] Starting {self.start}")
         # print(f"Wanna run: python3 {self.start} {self.launch}")
-        result = os.system(f"cd {path_from} && python3 {self.start} {self.launch}")
+        result = os.system(f'cd {path_from} && CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES="{gpu}," python3 {self.start} {self.launch}')
         if result == 0:
             print(f"[INFO] END {self.start} {self.launch}") 
         else:
@@ -41,7 +41,6 @@ class NgpRunner:
         config["W"] = kwargs['w']
         config["H"] = kwargs['h']
         config["group"] = kwargs['group']
-        config["cuda_num"] = kwargs['cuda_num']
         config.setdefault("eval_interval", config["epochs"] // 10)
 
     def prepare_launch(self):
@@ -67,7 +66,6 @@ class SemanticNgpRunner(NgpRunner):
         "num_steps": 96,
         "eval_interval": 100,
         "eval_ratio": 0.1,
-        "cuda_num": 0,
         "lambd": 0.01,
     }
     start = None
@@ -91,7 +89,6 @@ class TorchNgpRunner(NgpRunner):
         "num_steps": 96,
         "eval_interval": 100,
         "eval_ratio": 0.1,
-        "cuda_num": 0,
         "cuda_ray": False,
     }
     start = None
@@ -240,7 +237,7 @@ def main():
                 config, 
                 datapath=datapath,
                 place=place, sequence=sequence,
-                w=w, h=h, group=group, cuda_num=gpu, i=i,
+                w=w, h=h, group=group, i=i,
             )
             if do_run:
                 runners.append(TorchNgpRunner(config))
@@ -254,7 +251,7 @@ def main():
                 datapath=datapath,
                 place=place, sequence=sequence,
                 w=w, h=h, scene_file=scene_file,
-                group=group, cuda_num=gpu, i=i,
+                group=group, i=i,
             )
             runners.append(SemanticNgpRunner(config))
 
@@ -273,7 +270,7 @@ def main():
             runners.append(SemanticNeRFRunner(config))
         
         for r in runners:
-            result_run = r.run()
+            result_run = r.run(gpu)
             if result_run != 0 and not continue_on_fail:
                 return
 
