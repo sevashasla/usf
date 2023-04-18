@@ -45,12 +45,12 @@ def custom_meshgrid(*args):
     else:
         return torch.meshgrid(*args, indexing='ij')
 
-def linear_transform(image, lower=0.0, upper=255.0):
+def linear_transform(image: np.ndarray, lower=0.0, upper=255.0):
     image_min = image.min()
     image_max = image.max()
 
     convert_01 = (image - image_min) / (image_max - image_min + 1e-9)
-    return lower + convert_01 + upper
+    return (lower + convert_01 * (upper - lower)).astype(np.uint8)
 
 @torch.jit.script
 def linear_to_srgb(x):
@@ -865,6 +865,7 @@ class Trainer(object):
             all_preds_smntc = []
             all_preds_uncert = []
             all_preds_depth = []
+            all_preds_semantic_uncert = []
 
         with torch.no_grad():
 
@@ -884,15 +885,20 @@ class Trainer(object):
                 pred = preds[0].detach().cpu().numpy()
                 pred = (pred * 255).astype(np.uint8)
 
-                pred_smntc = preds_smntc[0].detach().cpu().numpy()
-                pred_smntc = pred_smntc.argmax(axis=-1).astype(np.uint8)
-
+                pred_smntc_logits = preds_smntc[0].detach().cpu()
+                pred_smntc = pred_smntc_logits.numpy().argmax(axis=-1).astype(np.uint8)
 
                 pred_uncert = preds_uncert[0].detach().cpu().numpy()
-                pred_uncert = pred_uncert / np.max(pred_uncert)
-                pred_uncert = (np.clip(pred_uncert, 0, 1) * 255).astype(np.uint8)
-                # pred_uncert = linear_transform(pred_uncert, 0.0, 255.0).astype(np.uint8)
 
+                # maybe it will be ok to watch at semantic unsert like this?
+                predicted_probs = F.softmax(pred_smntc_logits, dim=-1).numpy()
+                SC = predicted_probs.shape[-1] # semanic classes
+                semantic_unsert = np.zeros_like(predicted_probs)
+                # linear function
+                semantic_unsert[predicted_probs < 1 / SC] = SC * semantic_unsert[predicted_probs < 1 / SC]
+                semantic_unsert[predicted_probs >= 1 / SC] = SC / (SC - 1) * (1.0 - semantic_unsert[predicted_probs >= 1 / SC])
+                semantic_unsert = semantic_unsert.sum(axis=-1)
+                
                 pred_depth = preds_depth[0].detach().cpu().numpy()
                 pred_depth = (pred_depth * 255).astype(np.uint8)
 
@@ -903,10 +909,12 @@ class Trainer(object):
                     all_preds_smntc.append(pred_smntc)
                     all_preds_uncert.append(pred_uncert)
                     all_preds_depth.append(pred_depth)
+                    all_preds_semantic_uncert.append(semantic_unsert)
                 else:
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_rgb.png'), cv2.cvtColor(pred, cv2.COLOR_RGB2BGR))
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_smntc.png'), pred_smntc)
-                    cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_uncert.png'), pred_uncert)
+                    cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_uncert.png'), linear_transform(pred_uncert))
+                    cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_semantic_uncert.png'), linear_transform(semantic_unsert))
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_depth.png'), pred_depth)
 
                 pbar.update(loader.batch_size)
@@ -915,15 +923,18 @@ class Trainer(object):
             all_preds = np.stack(all_preds, axis=0)
             all_preds_smntc = np.stack(all_preds_smntc, axis=0)
             all_preds_uncert = np.stack(all_preds_uncert, axis=0)
+            all_preds_semantic_uncert = np.stack(all_preds_semantic_uncert, axis=0)
             all_preds_depth = np.stack(all_preds_depth, axis=0)
             imageio.mimwrite(os.path.join(save_path, f'{name}_rgb.mp4'), all_preds, fps=10, quality=8, macro_block_size=1)
             imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), self.sem_colormap[all_preds_smntc], fps=10, quality=8, macro_block_size=1)
-            imageio.mimwrite(os.path.join(save_path, f'{name}_uncert.mp4'), all_preds_uncert, fps=10, quality=8, macro_block_size=1)
+            imageio.mimwrite(os.path.join(save_path, f'{name}_uncert.mp4'), linear_transform(all_preds_uncert), fps=10, quality=8, macro_block_size=1)
+            imageio.mimwrite(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), linear_transform(all_preds_semantic_uncert), fps=10, quality=8, macro_block_size=1)
             imageio.mimwrite(os.path.join(save_path, f'{name}_depth.mp4'), all_preds_depth, fps=10, quality=8, macro_block_size=1)
             wandb.log({
                 "video/rgb": wandb.Video(os.path.join(save_path, f'{name}_rgb.mp4'), format="mp4"),
                 "video/semantic": wandb.Video(os.path.join(save_path, f'{name}_smntc.mp4'), format="mp4"),
                 "video/uncert": wandb.Video(os.path.join(save_path, f'{name}_uncert.mp4'), format="mp4"),
+                "video/semantic_uncert": wandb.Video(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), format="mp4"),
                 "video/depth": wandb.Video(os.path.join(save_path, f'{name}_depth.mp4'), format="mp4"),
             })
 
