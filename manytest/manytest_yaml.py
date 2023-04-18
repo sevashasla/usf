@@ -241,8 +241,6 @@ def main():
                 place=place, sequence=sequence,
                 w=w, h=h, group=group, i=i,
             )
-            if do_run:
-                runners.append(TorchNgpRunner(config))
 
         for i, semantic_ngp_exp_config in enumerate(exp["semantic_ngp"]):
             config = deepcopy(semantic_ngp_exp_config)

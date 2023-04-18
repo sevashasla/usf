@@ -708,9 +708,12 @@ class Trainer(object):
             self.error_map[index] = error_map
 
         loss = loss.mean()
-        # they use wieghted loss, but set lambda_ce = 1 it's ok
+        # they use weighted loss, but set lambda_ce = 1 it's ok
         wandb.log({"train/loss": loss.item(), "train/loss_ce": loss_ce.item(), "train/loss_uncert": loss_uncert.item()})
-        loss = loss + self.lambd * loss_ce + self.omega * loss_uncert
+
+        # TODO: Maybe delete loss of MSE?
+        # loss = loss + self.lambd * loss_ce + self.omega * loss_uncert
+        loss = self.lambd * loss_ce + self.omega * loss_uncert
 
         # extra loss
         # pred_weights_sum = outputs['weights_sum'] + 1e-8
@@ -884,7 +887,9 @@ class Trainer(object):
                 pred_smntc = preds_smntc[0].detach().cpu().numpy()
                 pred_smntc = pred_smntc.argmax(axis=-1).astype(np.uint8)
 
-                pred_uncert = preds_uncert[0].detach().cpu().numpy().astype(np.uint8)
+
+                pred_uncert = preds_uncert[0].detach().cpu().numpy()
+                pred_uncert = (np.clip(pred_uncert, 0, 1) * 255).astype(np.uint8)
                 # pred_uncert = linear_transform(pred_uncert, 0.0, 255.0).astype(np.uint8)
 
                 pred_depth = preds_depth[0].detach().cpu().numpy()

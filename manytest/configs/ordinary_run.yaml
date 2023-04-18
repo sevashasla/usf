@@ -47,6 +47,7 @@ experiments:
           num_steps: 512
           lambd: 0.01
           omega: 0.1
+          do_run: False
 
         - 
           epochs: 300
@@ -55,4 +56,15 @@ experiments:
           num_steps: 512
           lambd: 0.01
           omega: 0.01
+          do_run: False
+        
+        - 
+          epochs: 100
+          max_ray_batch: 2048
+          num_rays: 1024
+          num_steps: 512
+          eval_ratio: 0.5
+          eval_interval: 50
+          lambd: 0.01
+          omega: 0.1
          
