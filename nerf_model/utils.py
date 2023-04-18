@@ -875,7 +875,7 @@ class Trainer(object):
                     preds = full_pred_test['pred_rgb']
                     preds_smntc = full_pred_test['pred_smntc']
                     preds_uncert = full_pred_test['pred_uncert']
-                    preds_depth = full_pred_test['pred_rgb']
+                    preds_depth = full_pred_test['pred_depth']
                     
 
                 if self.opt.color_space == 'linear':
@@ -889,6 +889,7 @@ class Trainer(object):
 
 
                 pred_uncert = preds_uncert[0].detach().cpu().numpy()
+                pred_uncert = pred_uncert / np.max(pred_uncert)
                 pred_uncert = (np.clip(pred_uncert, 0, 1) * 255).astype(np.uint8)
                 # pred_uncert = linear_transform(pred_uncert, 0.0, 255.0).astype(np.uint8)
 

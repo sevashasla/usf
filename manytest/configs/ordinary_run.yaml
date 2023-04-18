@@ -67,4 +67,49 @@ experiments:
           eval_interval: 50
           lambd: 0.01
           omega: 0.1
+          do_run: False
+        
+        - 
+          epochs: 20
+          max_ray_batch: 2048
+          num_rays: 1024
+          num_steps: 512
+          eval_ratio: 0.5
+          eval_interval: 50
+          lambd: 0.01
+          omega: 0.1
+          do_run: False
+        - 
+          epochs: 20
+          max_ray_batch: 2048
+          num_rays: 1024
+          num_steps: 512
+          eval_ratio: 0.9
+          eval_interval: 50
+          lambd: 0.01
+          omega: 0.1
+          do_run: False
+
+        - 
+          epochs: 100
+          max_ray_batch: 2048
+          num_rays: 1024
+          num_steps: 512
+          eval_ratio: 0.97
+          eval_interval: 150
+          lambd: 0.01
+          omega: 0.1
+          do_run: False
+        
+        - 
+          epochs: 100
+          max_ray_batch: 2048
+          num_rays: 1024
+          num_steps: 512
+          eval_ratio: 0.9 # 0.1 * 900 ~= 90 images to train
+          eval_interval: 150
+          lambd: 0.01
+          omega: 0.5
+
+
          

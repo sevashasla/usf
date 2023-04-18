@@ -152,7 +152,7 @@ if __name__ == '__main__':
     criterion = torch.nn.MSELoss(reduction='none')
     criterion_semantic = torch.nn.CrossEntropyLoss()
     criterion_uncertainty = UncertaintyLoss(opt.alpha_uncert)
-    #criterion float partial(educticoeff inside UncertaintyLoss')
+    # criterion float partial(educticoeff inside UncertaintyLoss')
     #criterion = torch.nn.HuberLoss(reduction='none', beta=0.1) # only available after torch 1.10 ?
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

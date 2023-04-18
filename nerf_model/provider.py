@@ -183,22 +183,58 @@ class NeRFDataset:
         # for colmap, manually interpolate a test set.
         if self.mode == 'colmap' and type == 'test':
             
-            # choose two random poses, and interpolate between.
-            f0, f1 = np.random.choice(frames, 2, replace=False)
-            pose0 = nerf_matrix_to_ngp(np.array(f0['transform_matrix'], dtype=np.float32), scale=self.scale, offset=self.offset) # [4, 4]
-            pose1 = nerf_matrix_to_ngp(np.array(f1['transform_matrix'], dtype=np.float32), scale=self.scale, offset=self.offset) # [4, 4]
-            rots = Rotation.from_matrix(np.stack([pose0[:3, :3], pose1[:3, :3]]))
-            slerp = Slerp([0, 1], rots)
+            # # choose two random poses, and interpolate between.
+            # f0, f1 = np.random.choice(frames, 2, replace=False)
+            # pose0 = nerf_matrix_to_ngp(np.array(f0['transform_matrix'], dtype=np.float32), scale=self.scale, offset=self.offset) # [4, 4]
+            # pose1 = nerf_matrix_to_ngp(np.array(f1['transform_matrix'], dtype=np.float32), scale=self.scale, offset=self.offset) # [4, 4]
+            # rots = Rotation.from_matrix(np.stack([pose0[:3, :3], pose1[:3, :3]]))
+            # slerp = Slerp([0, 1], rots)
 
+            # self.poses = []
+            # self.images = None
+            # self.semantic_images = None
+            # for i in range(n_test + 1):
+            #     ratio = np.sin(((i / n_test) - 0.5) * np.pi) * 0.5 + 0.5
+            #     pose = np.eye(4, dtype=np.float32)
+            #     pose[:3, :3] = slerp(ratio).as_matrix()
+            #     pose[:3, 3] = (1 - ratio) * pose0[:3, 3] + ratio * pose1[:3, 3]
+            #     self.poses.append(pose)
+
+            # the new way of making test video
             self.poses = []
             self.images = None
             self.semantic_images = None
-            for i in range(n_test + 1):
-                ratio = np.sin(((i / n_test) - 0.5) * np.pi) * 0.5 + 0.5
-                pose = np.eye(4, dtype=np.float32)
-                pose[:3, :3] = slerp(ratio).as_matrix()
-                pose[:3, 3] = (1 - ratio) * pose0[:3, 3] + ratio * pose1[:3, 3]
-                self.poses.append(pose)
+            pose0 = np.array([
+                [1, 0, 0, 0], 
+                [0, 0, 1, 0], 
+                [0, 1, 0, 0], 
+                [0, 0, 0, 1]
+            ], dtype=np.float32)
+            pose0[:3, 3] = np.mean([np.array(f['transform_matrix'])[:3, 3] for f in frames], axis=0)
+            pose0 = nerf_matrix_to_ngp(pose0, scale=self.scale, offset=self.offset) # [4, 4]
+            poses_per_axis = n_test
+            step = np.pi * 2 / poses_per_axis
+            # # rotate over z
+            # for i in range(poses_per_axis):
+            #     curr_rot = Rotation.from_euler('xyz', [step * i, 0, 0]).as_matrix()
+            #     curr_pose = pose0.copy()
+            #     curr_pose[:3, :3] = curr_pose[:3, :3].copy() @ curr_rot
+            #     self.poses.append(curr_pose)
+            
+            # rotate over y
+            for i in range(poses_per_axis):
+                curr_rot = Rotation.from_euler('xyz', [0, step * i, 0]).as_matrix()
+                curr_pose = pose0.copy()
+                curr_pose[:3, :3] = curr_pose[:3, :3].copy() @ curr_rot
+                self.poses.append(curr_pose)
+
+            # # rotate over z
+            # for i in range(poses_per_axis):
+            #     curr_rot = Rotation.from_euler('xyz', [0, 0, step * i]).as_matrix()
+            #     curr_pose = pose0.copy()
+            #     curr_pose[:3, :3] = curr_pose[:3, :3].copy() @ curr_rot
+            #     self.poses.append(curr_pose)
+            
         elif self.mode == 'colmap' and type == 'train' and opt.load_saved:
             self.poses = []
             self.images = []
