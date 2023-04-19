@@ -31,6 +31,7 @@ class NeRFNetwork(NeRFRenderer):
                  **kwargs,
                  ):
         super().__init__(bound, **kwargs)
+        self.use_semantic = self.num_semantic_classes > 0
 
         # sigma network
         self.num_layers = num_layers
@@ -101,7 +102,7 @@ class NeRFNetwork(NeRFRenderer):
 
         # semantic network
         self.num_semantic_classes = num_semantic_classes
-        if self.num_semantic_classes > 0:
+        if self.use_semantic:
             self.num_layers_semantic = num_layers_semantic
             self.hidden_dim_semantic = hidden_dim_semantic
             semantic_net = []
@@ -117,8 +118,6 @@ class NeRFNetwork(NeRFRenderer):
                     out_dim = self.hidden_dim_semantic
                 semantic_net.append(nn.Linear(in_dim, out_dim, bias=False))
             self.semantic_net = nn.ModuleList(semantic_net)
-        else:
-            raise Exception("Should use semantic here")
         
         # uncertainty color
         self.beta_min = beta_min
@@ -168,12 +167,15 @@ class NeRFNetwork(NeRFRenderer):
         color = torch.sigmoid(h)
 
         # semantic
-        h = geo_feat
-        for l in range(self.num_layers_semantic):
-            h = self.semantic_net[l](h)
-            if l != self.num_layers_semantic - 1:
-                h = F.relu(h, inplace=True)
-        semantic = h
+        if self.use_semantic:
+            h = geo_feat
+            for l in range(self.num_layers_semantic):
+                h = self.semantic_net[l](h)
+                if l != self.num_layers_semantic - 1:
+                    h = F.relu(h, inplace=True)
+            semantic = h
+        else:
+            semantic = None
 
         # uncertainty
         h = geo_feat
@@ -256,6 +258,9 @@ class NeRFNetwork(NeRFRenderer):
     def semantic_pred(self, x, mask=None, geo_feat=None, **kwargs):
         # x: [N, 3] in [-bound, bound]
         # mask: [N,], bool, indicates where we actually needs to compute rgb.
+
+        if not self.use_semantic:
+            return None
 
         if mask is not None:
             smntc = torch.zeros(mask.shape[0], self.num_semantic_classes, dtype=x.dtype, device=x.device) # [N, SC]

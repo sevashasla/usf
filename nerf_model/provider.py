@@ -120,6 +120,7 @@ class NeRFDataset:
         self.training = self.type in ['train', 'all', 'trainval']
         self.num_rays = self.opt.num_rays if self.training else -1
         self.train_val_indexer = train_val_indexer
+        self.use_semantic = not opt.not_use_semantic
 
         self.rand_pose = opt.rand_pose
 
@@ -273,11 +274,13 @@ class NeRFDataset:
             
             self.poses = []
             self.images = []
-            self.semantic_images = []
+            if self.use_semantic:
+                self.semantic_images = []
             self.depths = []
             for f in tqdm.tqdm(frames, desc=f'Loading {type} data'):
                 f_path = os.path.join(self.root_path, f['file_path'])
-                semantic_path = os.path.join(self.root_path, f['semantic_path'])
+                if self.use_semantic:
+                    semantic_path = os.path.join(self.root_path, f['semantic_path'])
                 depth_path = os.path.join(self.root_path, f['depth_path']) if 'depth_path' in f else None
                 if self.mode == 'blender' and '.' not in os.path.basename(f_path):
                     f_path += '.png' # so silly...
@@ -307,9 +310,10 @@ class NeRFDataset:
                 image = image.astype(np.float32) / 255 # [H, W, 3/4]
 
                 ### semantic read
-                semantic = cv2.imread(semantic_path, cv2.IMREAD_UNCHANGED)
-                if semantic.shape[0] != self.H or semantic.shape[1] != self.W:
-                    semantic = cv2.resize(semantic, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
+                if self.use_semantic:
+                    semantic = cv2.imread(semantic_path, cv2.IMREAD_UNCHANGED)
+                    if semantic.shape[0] != self.H or semantic.shape[1] != self.W:
+                        semantic = cv2.resize(semantic, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
 
                 ### depth read
                 if not depth_path is None:
@@ -320,7 +324,8 @@ class NeRFDataset:
 
                 self.poses.append(pose)
                 self.images.append(image)
-                self.semantic_images.append(semantic)
+                if self.use_semantic:
+                    self.semantic_images.append(semantic)
 
         ### spoil dataset
         if type == 'train' and not opt.load_saved:
@@ -341,10 +346,11 @@ class NeRFDataset:
             self.semantic_images = torch.from_numpy(np.stack(self.semantic_images, axis=0)) # [N, H, W]
         
         # make semantic remap
-        if self.semantic_images is not None:
-            self.images = torch.from_numpy(np.stack(self.images, axis=0)) # [N, H, W, C]
-            self.semantic_remap.remap(self.semantic_images, inplace=True)
-            self.num_semantic_classes = len(self.semantic_remap.semantic_classes)
+        if self.use_semantic:
+            if self.semantic_images is not None:
+                self.images = torch.from_numpy(np.stack(self.images, axis=0)) # [N, H, W, C]
+                self.semantic_remap.remap(self.semantic_images, inplace=True)
+                self.num_semantic_classes = len(self.semantic_remap.semantic_classes)
         
         # calculate mean radius of all camera poses
         self.radius = self.poses[:, :3, 3].norm(dim=-1).mean(0).item()
@@ -373,7 +379,8 @@ class NeRFDataset:
                 else:
                     dtype = torch.float
                 self.images = self.images.to(dtype).to(self.device)
-                self.semantic_images = self.semantic_images.to(self.device)
+                if self.use_semantic:
+                    self.semantic_images = self.semantic_images.to(self.device)
             if self.error_map is not None:
                 self.error_map = self.error_map.to(self.device)
 
@@ -436,6 +443,7 @@ class NeRFDataset:
                 images = torch.gather(images.view(B, -1, C), 1, torch.stack(C * [rays['inds']], -1)) # [B, N, 3/4]
             results['images'] = images
 
+        if self.use_semantic:
             semantic_images = self.semantic_images[index].to(self.device)
             if self.training:
                 semantic_images = torch.gather(semantic_images.view(B, -1), 1, rays['inds']) # [B, N]
@@ -446,7 +454,7 @@ class NeRFDataset:
         if error_map is not None:
             results['index'] = index
             results['inds_coarse'] = rays['inds_coarse']
-            
+
         return results
 
     def dataloader(self):

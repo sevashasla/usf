@@ -472,6 +472,7 @@ class Trainer(object):
         self.device = device if device is not None else torch.device(f'cuda:{local_rank}' if torch.cuda.is_available() else 'cpu')
         self.console = Console()
         self.semantic_remap = semantic_remap
+        self.use_semantic = not self.not_use_semantic
         self.lambd = lambd
         self.omega = omega
 
@@ -663,7 +664,10 @@ class Trainer(object):
         loss = self.criterion(pred_rgb, gt_rgb).mean(-1) # [B, N, 3] --> [B, N]
 
         # CrossEntropyLoss
-        loss_ce = self.criterion_semantic(pred_smntc.view(B * N, SC), gt_smntc.view(B * N)) # scalar
+        if self.use_semantic:
+            loss_ce = self.criterion_semantic(pred_smntc.view(B * N, SC), gt_smntc.view(B * N)) # scalar
+        else:
+            loss_ce = 0.0
 
         # UncertaintyLoss
         loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
@@ -712,8 +716,8 @@ class Trainer(object):
         wandb.log({"train/loss": loss.item(), "train/loss_ce": loss_ce.item(), "train/loss_uncert": loss_uncert.item()})
 
         # TODO: Maybe delete loss of MSE?
-        # loss = loss + self.lambd * loss_ce + self.omega * loss_uncert
-        loss = self.lambd * loss_ce + self.omega * loss_uncert
+        loss = loss + self.lambd * loss_ce + self.omega * loss_uncert
+        # loss = self.lambd * loss_ce + self.omega * loss_uncert
 
         # extra loss
         # pred_weights_sum = outputs['weights_sum'] + 1e-8
@@ -753,13 +757,19 @@ class Trainer(object):
         outputs = self.model.render(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=False, **vars(self.opt))
 
         pred_rgb = outputs['image'].reshape(B, H, W, 3)
-        pred_smntc = outputs['semantic_image'].reshape(B, H, W, SC)
+        if self.use_semantic:
+            pred_smntc = outputs['semantic_image'].reshape(B, H, W, SC)
+        else:
+            pred_smntc = None
         pred_uncert = outputs['uncertainty_image'].reshape(B, H, W, 1)
         pred_depth = outputs['depth'].reshape(B, H, W)
         pred_alpha = outputs['alphas']
 
         loss = self.criterion(pred_rgb, gt_rgb).mean()
-        loss_ce = self.criterion_semantic(pred_smntc.view(B * H * W, SC), gt_smntc.view(B * H * W))
+        if self.use_semantic:
+            loss_ce = self.criterion_semantic(pred_smntc.view(B * H * W, SC), gt_smntc.view(B * H * W))
+        else:
+            loss_ce = 0.0
         loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
         loss = loss + self.lambd * loss_ce + self.omega * loss_uncert
 
@@ -788,7 +798,10 @@ class Trainer(object):
         SC = self.model.num_semantic_classes
 
         pred_rgb = outputs['image'].reshape(-1, H, W, 3)
-        pred_smntc = outputs['semantic_image'].reshape(-1, H, W, SC)
+        if self.use_semantic:
+            pred_smntc = outputs['semantic_image'].reshape(-1, H, W, SC)
+        else:
+            pred_smntc = None
         pred_uncert = outputs['uncertainty_image'].reshape(-1, H, W, 1)
         pred_depth = outputs['depth'].reshape(-1, H, W)
 
@@ -862,10 +875,11 @@ class Trainer(object):
 
         if write_video:
             all_preds = []
-            all_preds_smntc = []
             all_preds_uncert = []
             all_preds_depth = []
-            all_preds_semantic_uncert = []
+            if self.use_semantic:
+                all_preds_smntc = []
+                all_preds_semantic_uncert = []
 
         with torch.no_grad():
 
@@ -884,59 +898,71 @@ class Trainer(object):
 
                 pred = preds[0].detach().cpu().numpy()
                 pred = (pred * 255).astype(np.uint8)
-
-                pred_smntc_logits = preds_smntc[0].detach().cpu()
-                pred_smntc = pred_smntc_logits.numpy().argmax(axis=-1).astype(np.uint8)
-
+                
                 pred_uncert = preds_uncert[0].detach().cpu().numpy()
 
-                # maybe it will be ok to watch at semantic unsert like this?
-                predicted_probs = F.softmax(pred_smntc_logits, dim=-1).numpy()
-                SC = predicted_probs.shape[-1] # semanic classes
-                semantic_unsert = np.zeros_like(predicted_probs)
-                # linear function
-                semantic_unsert[predicted_probs < 1 / SC] = SC * semantic_unsert[predicted_probs < 1 / SC]
-                semantic_unsert[predicted_probs >= 1 / SC] = SC / (SC - 1) * (1.0 - semantic_unsert[predicted_probs >= 1 / SC])
-                semantic_unsert = semantic_unsert.sum(axis=-1)
+                if self.use_semantic:
+                    pred_smntc_logits = preds_smntc[0].detach().cpu()
+                    pred_smntc = pred_smntc_logits.numpy().argmax(axis=-1).astype(np.uint8)
+
+
+                    # maybe it will be ok to watch at semantic unsert like this?
+                    predicted_probs = F.softmax(pred_smntc_logits, dim=-1).numpy()
+                    SC = predicted_probs.shape[-1] # semanic classes
+                    semantic_unsert = np.zeros_like(predicted_probs)
+                    # linear function
+                    semantic_unsert[predicted_probs < 1 / SC] = SC * semantic_unsert[predicted_probs < 1 / SC]
+                    semantic_unsert[predicted_probs >= 1 / SC] = SC / (SC - 1) * (1.0 - semantic_unsert[predicted_probs >= 1 / SC])
+                    semantic_unsert = semantic_unsert.sum(axis=-1)
                 
                 pred_depth = preds_depth[0].detach().cpu().numpy()
                 pred_depth = (pred_depth * 255).astype(np.uint8)
 
-                if self.semantic_remap:
+                if self.use_semantic and self.semantic_remap:
                     self.semantic_remap.inv_remap(pred_smntc, inplace=True)
                 if write_video:
                     all_preds.append(pred)
-                    all_preds_smntc.append(pred_smntc)
                     all_preds_uncert.append(pred_uncert)
+                    if self.use_semantic:
+                        all_preds_smntc.append(pred_smntc)
+                        all_preds_semantic_uncert.append(semantic_unsert)
                     all_preds_depth.append(pred_depth)
-                    all_preds_semantic_uncert.append(semantic_unsert)
                 else:
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_rgb.png'), cv2.cvtColor(pred, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_smntc.png'), pred_smntc)
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_uncert.png'), linear_transform(pred_uncert))
-                    cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_semantic_uncert.png'), linear_transform(semantic_unsert))
+                    if self.use_semantic:
+                        cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_smntc.png'), pred_smntc)
+                        cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_semantic_uncert.png'), linear_transform(semantic_unsert))
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_depth.png'), pred_depth)
 
                 pbar.update(loader.batch_size)
         
         if write_video:
             all_preds = np.stack(all_preds, axis=0)
-            all_preds_smntc = np.stack(all_preds_smntc, axis=0)
             all_preds_uncert = np.stack(all_preds_uncert, axis=0)
-            all_preds_semantic_uncert = np.stack(all_preds_semantic_uncert, axis=0)
+            if self.use_semantic:
+                all_preds_smntc = np.stack(all_preds_smntc, axis=0)
+                all_preds_semantic_uncert = np.stack(all_preds_semantic_uncert, axis=0)
             all_preds_depth = np.stack(all_preds_depth, axis=0)
             imageio.mimwrite(os.path.join(save_path, f'{name}_rgb.mp4'), all_preds, fps=10, quality=8, macro_block_size=1)
-            imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), self.sem_colormap[all_preds_smntc], fps=10, quality=8, macro_block_size=1)
             imageio.mimwrite(os.path.join(save_path, f'{name}_uncert.mp4'), linear_transform(all_preds_uncert), fps=10, quality=8, macro_block_size=1)
-            imageio.mimwrite(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), linear_transform(all_preds_semantic_uncert), fps=10, quality=8, macro_block_size=1)
+            if self.use_semantic:
+                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), self.sem_colormap[all_preds_smntc], fps=10, quality=8, macro_block_size=1)
+                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), linear_transform(all_preds_semantic_uncert), fps=10, quality=8, macro_block_size=1)
             imageio.mimwrite(os.path.join(save_path, f'{name}_depth.mp4'), all_preds_depth, fps=10, quality=8, macro_block_size=1)
-            wandb.log({
+            to_log_videos = {
                 "video/rgb": wandb.Video(os.path.join(save_path, f'{name}_rgb.mp4'), format="mp4"),
-                "video/semantic": wandb.Video(os.path.join(save_path, f'{name}_smntc.mp4'), format="mp4"),
                 "video/uncert": wandb.Video(os.path.join(save_path, f'{name}_uncert.mp4'), format="mp4"),
-                "video/semantic_uncert": wandb.Video(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), format="mp4"),
                 "video/depth": wandb.Video(os.path.join(save_path, f'{name}_depth.mp4'), format="mp4"),
-            })
+            }
+            if self.use_semantic:
+                to_log_videos = {
+                    **to_log_videos,
+                    "video/semantic": wandb.Video(os.path.join(save_path, f'{name}_smntc.mp4'), format="mp4"),
+                    "video/semantic_uncert": wandb.Video(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), format="mp4"),
+                }
+            wandb.log(to_log_videos)
+
 
         self.log(f"==> Finished Test.")
     

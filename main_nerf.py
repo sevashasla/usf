@@ -75,6 +75,7 @@ if __name__ == '__main__':
     ### semantic
     parser.add_argument('--num_semantic_classes', type=int, required=False, help="number of semantic classes")
     parser.add_argument('--semantic_remap', type=json.loads, required=False, help="remap for semantic classes")
+    parser.add_argument('--not_use_semantic', action="store_true", help="use and predict the semantic labels")
 
     # uncertrainty
     parser.add_argument('--alpha_uncert', type=float, default=0.01, help="coeff inside UncertaintyLoss")
@@ -144,8 +145,8 @@ if __name__ == '__main__':
 
     print(opt)
 
-    if opt.test and opt.num_semantic_classes is None:
-        raise RuntimeError("Must be known if test")
+    if opt.test and opt.num_semantic_classes is None and not opt.not_use_semantic:
+        raise RuntimeError("'num_semantic_classes' must be known if test")
     
     seed_everything(opt.seed)
 
@@ -171,7 +172,10 @@ if __name__ == '__main__':
         )
 
         metrics = [PSNRMeter(), LPIPSMeter(device=device), SSIMMeter(device=device)]
-        segmentation_metrics = [SegmentationMeter(opt.num_semantic_classes)]
+        if not opt.not_use_semantic:
+            segmentation_metrics = [SegmentationMeter(opt.num_semantic_classes)]
+        else:
+            segmentation_metrics = []
         # TODO
         depth_metrics = []
         trainer = Trainer(
@@ -218,7 +222,10 @@ if __name__ == '__main__':
         scheduler = lambda optimizer: optim.lr_scheduler.LambdaLR(optimizer, lambda iter: 0.1 ** min(iter / iters, 1))
 
         metrics = [PSNRMeter(), LPIPSMeter(device=device), SSIMMeter(device=device)]
-        segmentation_metrics = [SegmentationMeter(num_semantic_classes)]
+        if not opt.not_use_semantic:
+            segmentation_metrics = [SegmentationMeter(opt.num_semantic_classes)]
+        else:
+            segmentation_metrics = []
         # TODO
         depth_metrics = []
 
