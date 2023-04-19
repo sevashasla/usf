@@ -262,6 +262,8 @@ class NeRFRenderer(nn.Module):
         image = image.view(*prefix, 3)
         if self.use_semantic:
             semantic_image = semantic_image.view(*prefix, self.num_semantic_classes)
+        else:
+            semantic_image = None
         uncertainty_image = uncertainty_image.view(*prefix, 1)
         depth = depth.view(*prefix)
 
@@ -604,6 +606,8 @@ class NeRFRenderer(nn.Module):
             results['image'] = image
             if self.use_semantic:
                 results['semantic_image'] = semantic_image
+            else:
+                results['semantic_image'] = None
             results['uncertainty_image'] = uncertainty_image
             results['alphas'] = alphas
 

@@ -472,7 +472,7 @@ class Trainer(object):
         self.device = device if device is not None else torch.device(f'cuda:{local_rank}' if torch.cuda.is_available() else 'cpu')
         self.console = Console()
         self.semantic_remap = semantic_remap
-        self.use_semantic = not self.not_use_semantic
+        self.use_semantic = not opt.not_use_semantic
         self.lambd = lambd
         self.omega = omega
 
@@ -629,7 +629,10 @@ class Trainer(object):
             return pred_rgb, None, pred_smntc, None, pred_depth, loss
 
         images = data['images'] # [B, N, 3/4]
-        semantic_images = data['semantic_images']
+        if self.use_semantic:
+            semantic_images = data['semantic_images']
+        else:
+            semantic_images = None
         B, N, C = images.shape
         SC = self.model.num_semantic_classes # number of semantic classes
 
@@ -649,6 +652,7 @@ class Trainer(object):
         else:
             gt_rgb = images
 
+    
         gt_smntc = semantic_images
 
         outputs = self.model.render(rays_o, rays_d, staged=False, bg_color=bg_color, perturb=True, force_all_rays=False if self.opt.patch_size == 1 else True, **vars(self.opt))
@@ -667,7 +671,7 @@ class Trainer(object):
         if self.use_semantic:
             loss_ce = self.criterion_semantic(pred_smntc.view(B * N, SC), gt_smntc.view(B * N)) # scalar
         else:
-            loss_ce = 0.0
+            loss_ce = torch.tensor(0.0)
 
         # UncertaintyLoss
         loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
@@ -739,7 +743,10 @@ class Trainer(object):
         rays_o = data['rays_o'] # [B, N, 3]
         rays_d = data['rays_d'] # [B, N, 3]
         images = data['images'] # [B, H, W, 3/4]
-        semantic_images = data['semantic_images'] # [B, H, W]
+        if self.use_semantic:
+            semantic_images = data['semantic_images'] # [B, H, W]
+        else:
+            semantic_images = None
         B, H, W, C = images.shape
         SC = self.model.num_semantic_classes
 
@@ -769,7 +776,7 @@ class Trainer(object):
         if self.use_semantic:
             loss_ce = self.criterion_semantic(pred_smntc.view(B * H * W, SC), gt_smntc.view(B * H * W))
         else:
-            loss_ce = 0.0
+            loss_ce = torch.tensor(0.0)
         loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
         loss = loss + self.lambd * loss_ce + self.omega * loss_uncert
 

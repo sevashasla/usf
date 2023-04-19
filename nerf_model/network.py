@@ -31,7 +31,9 @@ class NeRFNetwork(NeRFRenderer):
                  **kwargs,
                  ):
         super().__init__(bound, **kwargs)
-        self.use_semantic = self.num_semantic_classes > 0
+
+        self.use_semantic = num_semantic_classes > 0
+        self.num_semantic_classes = num_semantic_classes
 
         # sigma network
         self.num_layers = num_layers
@@ -101,7 +103,6 @@ class NeRFNetwork(NeRFRenderer):
             self.bg_net = None
 
         # semantic network
-        self.num_semantic_classes = num_semantic_classes
         if self.use_semantic:
             self.num_layers_semantic = num_layers_semantic
             self.hidden_dim_semantic = hidden_dim_semantic
@@ -320,9 +321,10 @@ class NeRFNetwork(NeRFRenderer):
             {'params': self.sigma_net.parameters(), 'lr': lr},
             {'params': self.encoder_dir.parameters(), 'lr': lr},
             {'params': self.color_net.parameters(), 'lr': lr}, 
-            {'params': self.semantic_net.parameters(), 'lr': lr}, 
             {'params': self.uncertainty_net.parameters(), 'lr': lr}, 
         ]
+        if self.use_semantic:
+            params.append({'params': self.semantic_net.parameters(), 'lr': lr})
         if self.bg_radius > 0:
             params.append({'params': self.encoder_bg.parameters(), 'lr': lr})
             params.append({'params': self.bg_net.parameters(), 'lr': lr})

@@ -36,7 +36,8 @@ class NgpRunner:
 
     @classmethod
     def prepare_config(cls, config, **kwargs):
-        config["workspace"] = f"{cls.store_result}/{kwargs['place']}_{kwargs['sequence']}_{kwargs['w']}_{kwargs['h']}_{kwargs['i']}"
+        workspace = config.pop("name", f"{kwargs['place']}_{kwargs['sequence']}_{kwargs['w']}_{kwargs['h']}_{kwargs['i']}")
+        config["workspace"] = f"{cls.store_result}/{workspace}"
         config["datapath"] = kwargs['datapath']
         config["W"] = kwargs['w']
         config["H"] = kwargs['h']
@@ -162,7 +163,8 @@ class SemanticNeRFRunner(NgpRunner):
     @classmethod
     def prepare_config(cls, config, **kwargs):
         config.setdefault("experiment", {})
-        config["experiment"]["save_dir"] = f"{cls.store_result}/{kwargs['place']}_{kwargs['sequence']}_{kwargs['w']}_{kwargs['h']}_{kwargs['i']}"
+        workspace = config.pop("name", f"{kwargs['place']}_{kwargs['sequence']}_{kwargs['w']}_{kwargs['h']}_{kwargs['i']}")
+        config["experiment"]["save_dir"] = f"{cls.store_result}/{workspace}"
         config["experiment"]["scene_file"] = kwargs['scene_file']
         config["experiment"]["dataset_dir"] = kwargs['datapath']
         config["experiment"]["width"] = kwargs['w']
