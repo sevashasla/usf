@@ -674,7 +674,10 @@ class Trainer(object):
             loss_ce = torch.tensor(0.0)
 
         # UncertaintyLoss
-        loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
+        if pred_uncert.min() > 0:
+            loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
+        else:
+            loss_uncert = torch.tensor(0.0)
 
         # patch-based rendering
         if self.opt.patch_size > 1:
@@ -1235,9 +1238,10 @@ class Trainer(object):
                     dist.all_gather(preds_smntc_list, preds_smntc)
                     preds_smntc = torch.cat(preds_smntc_list, dim=0)
 
-                    preds_uncert_list = [torch.zeros_like(preds_uncert).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
-                    dist.all_gather(preds_uncert_list, preds_uncert)
-                    preds_uncert = torch.cat(preds_uncert_list, dim=0)
+                    if self.use_semantic:
+                        preds_uncert_list = [torch.zeros_like(preds_uncert).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
+                        dist.all_gather(preds_uncert_list, preds_uncert)
+                        preds_uncert = torch.cat(preds_uncert_list, dim=0)
 
                     preds_depth_list = [torch.zeros_like(preds_depth).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
                     dist.all_gather(preds_depth_list, preds_depth)
@@ -1265,7 +1269,8 @@ class Trainer(object):
 
                     # save image
                     save_path = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_rgb.png')
-                    save_path_smntc = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_smntc.png')
+                    if self.use_semantic:
+                        save_path_smntc = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_smntc.png')
                     save_path_uncert = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_uncert.png')
                     save_path_depth = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_depth.png')
 
@@ -1277,9 +1282,10 @@ class Trainer(object):
 
                     pred = preds[0].detach().cpu().numpy()
                     pred = (pred * 255).astype(np.uint8)
-
-                    pred_smntc = preds_smntc[0].detach().cpu().numpy()
-                    pred_smntc = pred_smntc.argmax(axis=-1).astype(np.uint8)
+                    
+                    if self.use_semantic:
+                        pred_smntc = preds_smntc[0].detach().cpu().numpy()
+                        pred_smntc = pred_smntc.argmax(axis=-1).astype(np.uint8)
 
                     pred_uncert = preds_uncert[0].detach().cpu().numpy()
 
@@ -1287,7 +1293,8 @@ class Trainer(object):
                     pred_depth = (pred_depth * 255).astype(np.uint8)
                     
                     cv2.imwrite(save_path, cv2.cvtColor(pred, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite(save_path_smntc, pred_smntc)
+                    if self.use_semantic:
+                        cv2.imwrite(save_path_smntc, pred_smntc)
                     cv2.imwrite(save_path_uncert, pred_uncert)
                     cv2.imwrite(save_path_depth, pred_depth)
 
