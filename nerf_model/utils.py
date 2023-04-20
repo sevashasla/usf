@@ -61,6 +61,31 @@ def linear_to_srgb(x):
 def srgb_to_linear(x):
     return torch.where(x < 0.04045, x / 12.92, ((x + 0.055) / 1.055) ** 2.4)
 
+class DirichletSemanticLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, pred_parameters, gt_semantic, weight=1.0):
+        '''
+        pred_parameters, gt: [B, N, SC] <---> alphas
+        gt_semantic: [B, N]
+        '''
+
+        dirichlet_strength = pred_parameters.sum(dim=-1) # [B, N]
+        all_probs = pred_parameters / dirichlet_strength
+        uncert = all_probs[..., 0]
+        probs = all_probs[..., :-1]
+
+        # (p_1 - 1) ** 2 + p_2 ** 2 + ... + p_n ** 2 = 
+        # 1 -2p_1 + p_1 ** 2 + p_2 ** 2 + ... + p_n ** 2 = 
+        first = (probs ** 2).sum() + 1 - 2 * probs[gt_semantic]
+        second = probs * (1 - probs) / (dirichlet_strength + 1)
+
+        # add KL-Distance
+        third = torch.lgamma(pred_parameters.sum(dim=-1)) - torch.lgamma(pred_parameters.size(-1)) - torch.lgamma(pred_parameters).sum(dim=-1) +\
+            (pred_parameters - 1.0) * (torch.digamma(pred_parameters) - )
+
+
 
 class UncertaintyLoss(nn.Module):
     '''
@@ -724,10 +749,11 @@ class Trainer(object):
 
         loss = loss.mean()
         # they use weighted loss, but set lambda_ce = 1 it's ok
-        wandb.log({"train/loss": loss.item(), "train/loss_ce": loss_ce.item(), "train/loss_uncert": loss_uncert.item()})
+        losses_to_log = {"train/loss": loss.item(), "train/loss_ce": loss_ce.item(), "train/loss_uncert": loss_uncert.item()}
 
         # TODO: Maybe delete loss of MSE?
-        loss = loss + self.lambd * loss_ce + self.omega * loss_uncert
+        loss = (1 - self.omega) * loss + self.lambd * loss_ce + self.omega * loss_uncert
+        wandb.log({**losses_to_log, "train/sum_loss": loss.item()})
         # loss = self.lambd * loss_ce + self.omega * loss_uncert
 
         # extra loss
@@ -785,7 +811,7 @@ class Trainer(object):
         else:
             loss_ce = torch.tensor(0.0)
         loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
-        loss = loss + self.lambd * loss_ce + self.omega * loss_uncert
+        loss = (1 - self.omega) * loss + self.lambd * loss_ce + self.omega * loss_uncert
 
         return {
             "pred_rgb": pred_rgb, 
