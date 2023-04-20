@@ -243,6 +243,7 @@ def main():
                 place=place, sequence=sequence,
                 w=w, h=h, group=group, i=i,
             )
+            runners.append(TorchNgpRunner(config))
 
         for i, semantic_ngp_exp_config in enumerate(exp["semantic_ngp"]):
             config = deepcopy(semantic_ngp_exp_config)
@@ -270,7 +271,7 @@ def main():
                 i=i,
             )
             runners.append(SemanticNeRFRunner(config))
-        
+
         for r in runners:
             result_run = r.run(gpu)
             if result_run != 0 and not continue_on_fail:

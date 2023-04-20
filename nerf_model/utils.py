@@ -63,6 +63,9 @@ def srgb_to_linear(x):
 
 
 class UncertaintyLoss(nn.Module):
+    '''
+    Count UncertaintyLoss on one image
+    '''
     def __init__(self, w):
         super().__init__()
         self.w = w
@@ -70,11 +73,15 @@ class UncertaintyLoss(nn.Module):
     def forward(self, pred_rgb, gt_rgb, uncert, alphas):
         '''
         calculates likelihood + regularization
+        pred_rgb, gt: [B, N, 3]
+        uncert: [B, N, 1]
+        alphas: [B, N, T+t]
         '''
+        idx_no_zero = ~torch.isclose(uncert, torch.zeros_like(uncert)).squeeze(-1)
         eps = 1e-9
-        first = 0.5 * torch.mean((pred_rgb - gt_rgb) ** 2 / (uncert + eps)) 
-        second = 0.5 * torch.mean(torch.log(uncert + eps))
-        third = self.w * alphas.mean() + 4.0
+        first = 0.5 * torch.mean((pred_rgb[idx_no_zero] - gt_rgb[idx_no_zero]) ** 2 / (uncert[idx_no_zero] + eps)) 
+        second = 0.5 * torch.mean(torch.log(uncert[idx_no_zero] + eps))
+        third = self.w * alphas[idx_no_zero].mean() + 4.0
         return first + second + third
 
 
@@ -619,7 +626,7 @@ class Trainer(object):
             outputs = self.model.render(rays_o, rays_d, staged=False, bg_color=None, perturb=True, force_all_rays=True, **vars(self.opt))
             pred_rgb = outputs['image'].reshape(B, H, W, 3).permute(0, 3, 1, 2).contiguous()
             pred_smntc = outputs['semantic_image']
-            pred_uncert = outputs['semantic_image']
+            pred_uncert = outputs['uncertainty_image']
             pred_depth = outputs['depth']
 
             # [debug] uncomment to plot the images used in train_step
@@ -674,10 +681,7 @@ class Trainer(object):
             loss_ce = torch.tensor(0.0)
 
         # UncertaintyLoss
-        if pred_uncert.min() > 0:
-            loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
-        else:
-            loss_uncert = torch.tensor(0.0)
+        loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
 
         # patch-based rendering
         if self.opt.patch_size > 1:
@@ -773,7 +777,7 @@ class Trainer(object):
             pred_smntc = None
         pred_uncert = outputs['uncertainty_image'].reshape(B, H, W, 1)
         pred_depth = outputs['depth'].reshape(B, H, W)
-        pred_alpha = outputs['alphas']
+        pred_alpha = outputs['alphas'].reshape(B, H, W, -1)
 
         loss = self.criterion(pred_rgb, gt_rgb).mean()
         if self.use_semantic:
@@ -1011,6 +1015,12 @@ class Trainer(object):
                 preds, truths, pred_smntc, gt_smntc, pred_depth, loss = self.train_step(data)
          
             self.scaler.scale(loss).backward()
+            with torch.no_grad():
+                sum_grads = 0.0
+                for p in self.model.parameters():
+                    if p.requires_grad:
+                        sum_grads += torch.mean(p.grad ** 2.0).item()
+                wandb.log({"train/grad_norm": sum_grads})
             self.scaler.step(self.optimizer)
             self.scaler.update()
             
@@ -1135,6 +1145,13 @@ class Trainer(object):
                 loss = full_pred_train["loss"]
          
             self.scaler.scale(loss).backward()
+            with torch.no_grad():
+                sum_grads = 0.0
+                for p in self.model.parameters():
+                    if p.requires_grad:
+                        sum_grads += torch.mean(p.grad ** 2.0).item()
+                wandb.log({"train/grad_norm": sum_grads})
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1000.0) # TODO not hardcode
             self.scaler.step(self.optimizer)
             self.scaler.update()
 

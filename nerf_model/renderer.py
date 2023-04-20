@@ -266,6 +266,7 @@ class NeRFRenderer(nn.Module):
             semantic_image = None
         uncertainty_image = uncertainty_image.view(*prefix, 1)
         depth = depth.view(*prefix)
+        alphas = alphas.view(*prefix, -1)
 
         # tmp: reg loss in mip-nerf 360
         # z_vals_shifted = torch.cat([z_vals[..., 1:], sample_dist * torch.ones_like(z_vals[..., :1])], dim=-1)
