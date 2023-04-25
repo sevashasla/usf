@@ -42,7 +42,7 @@ class NgpRunner:
         config["W"] = kwargs['w']
         config["H"] = kwargs['h']
         config["group"] = kwargs['group']
-        config.setdefault("eval_interval", config["epochs"] // 10)
+        config.setdefault("eval_interval", config["epochs"] // 5)
 
     def prepare_launch(self):
         other_params = deepcopy(self.params)

@@ -65,16 +65,20 @@ class DirichletSemanticLoss(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, pred_parameters, gt_semantic, weight=1.0):
+    def forward(self, pred_parameters, gt_semantic):
         '''
         pred_parameters, gt: [B, N, SC] <---> alphas
+        e = alpha - 1
+        S = sum(alphas)
+        b = (alpha - 1) / S
+        u = K / S
         gt_semantic: [B, N]
         '''
 
+        K = pred_parameters.size(-1)
         dirichlet_strength = pred_parameters.sum(dim=-1) # [B, N]
-        all_probs = pred_parameters / dirichlet_strength
-        uncert = all_probs[..., 0]
-        probs = all_probs[..., :-1]
+        probs = (pred_parameters - 1) / dirichlet_strength
+        uncert = K / dirichlet_strength
 
         # (p_1 - 1) ** 2 + p_2 ** 2 + ... + p_n ** 2 = 
         # 1 -2p_1 + p_1 ** 2 + p_2 ** 2 + ... + p_n ** 2 = 
@@ -82,14 +86,15 @@ class DirichletSemanticLoss(nn.Module):
         second = probs * (1 - probs) / (dirichlet_strength + 1)
 
         # add KL-Distance
-        third = torch.lgamma(pred_parameters.sum(dim=-1)) - torch.lgamma(pred_parameters.size(-1)) - torch.lgamma(pred_parameters).sum(dim=-1) +\
-            (pred_parameters - 1.0) * (torch.digamma(pred_parameters) - )
+        third = torch.lgamma(pred_parameters.sum(dim=-1)) - torch.lgamma(K) - torch.lgamma(pred_parameters).sum(dim=-1) +\
+            (pred_parameters - 1.0) * (torch.digamma(pred_parameters) - torch.digamma(dirichlet_strength))
+
+        return first + second + third
 
 
-
-class UncertaintyLoss(nn.Module):
+class RGBUncertaintyLoss(nn.Module):
     '''
-    Count UncertaintyLoss on one image
+    It calculates RGBUncertaintyLoss on one image
     '''
     def __init__(self, w):
         super().__init__()
@@ -705,7 +710,7 @@ class Trainer(object):
         else:
             loss_ce = torch.tensor(0.0)
 
-        # UncertaintyLoss
+        # RGBUncertaintyLoss
         loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
 
         # patch-based rendering

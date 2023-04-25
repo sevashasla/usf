@@ -30,6 +30,7 @@ if __name__ == '__main__':
     ### training options
     # parser.add_argument('--iters', type=int, default=30000, help="training iters")
     parser.add_argument('--epochs', type=int, default=20, help="training epochs")
+    parser.add_argument('--warmup_epochs', type=int, default=20, help="number of warmup epochs")
     parser.add_argument('--lr', type=float, default=1e-2, help="initial learning rate")
     parser.add_argument('--ckpt', type=str, default='latest')
     parser.add_argument('--num_rays', type=int, default=4096, help="num rays sampled per image for each training step")
@@ -78,9 +79,9 @@ if __name__ == '__main__':
     parser.add_argument('--not_use_semantic', action="store_true", help="use and predict the semantic labels")
 
     # uncertrainty
-    parser.add_argument('--alpha_uncert', type=float, default=0.01, help="coeff inside UncertaintyLoss")
+    parser.add_argument('--alpha_uncert', type=float, default=0.01, help="coeff inside RGBUncertaintyLoss")
     parser.add_argument('--beta_min', type=float, default=0.01, help="beta_min in NeRFNetwork, min of uncertainty")
-    parser.add_argument('--omega', type=float, default=1.0, help="weight of UncertaintyLoss")
+    parser.add_argument('--omega', type=float, default=1.0, help="weight of RGBUncertaintyLoss")
 
     ### SPECIAL PARAMETERS
     # sparse-views
@@ -152,8 +153,8 @@ if __name__ == '__main__':
 
     criterion = torch.nn.MSELoss(reduction='none')
     criterion_semantic = torch.nn.CrossEntropyLoss()
-    criterion_uncertainty = UncertaintyLoss(opt.alpha_uncert)
-    # criterion float partial(educticoeff inside UncertaintyLoss')
+    criterion_uncertainty = RGBUncertaintyLoss(opt.alpha_uncert)
+    # criterion float partial(educticoeff inside RGBUncertaintyLoss')
     #criterion = torch.nn.HuberLoss(reduction='none', beta=0.1) # only available after torch 1.10 ?
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -219,7 +220,11 @@ if __name__ == '__main__':
         iters = len(train_loader) * opt.epochs
 
         # decay to 0.1 * init_lr at last iter step
-        scheduler = lambda optimizer: optim.lr_scheduler.LambdaLR(optimizer, lambda iter: 0.1 ** min(iter / iters, 1))
+        scheduler = lambda optimizer: optim.lr_scheduler.LambdaLR(
+            optimizer, lambda iter: 
+                0.1 ** min(iter / iters, 1) * \
+                min(1e-3 + 1 / opt.warmup_epochs * iter, 1) # warmup
+            )
 
         metrics = [PSNRMeter(), LPIPSMeter(device=device), SSIMMeter(device=device)]
         if not opt.not_use_semantic:

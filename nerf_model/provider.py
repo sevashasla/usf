@@ -133,44 +133,11 @@ class NeRFDataset:
             self.semantic_remap = semantic_remap
             self.num_semantic_classes = len(self.semantic_remap.semantic_classes)
 
-        # auto-detect transforms.json and split mode.
-        if os.path.exists(os.path.join(self.root_path, 'transforms.json')):
-            self.mode = 'colmap' # manually split, use view-interpolation for test.
-        elif os.path.exists(os.path.join(self.root_path, 'transforms_train.json')):
-            self.mode = 'blender' # provided split
-        else:
-            raise NotImplementedError(f'[NeRFDataset] Cannot find transforms*.json under {self.root_path}')
+        # blender or colmap mode
+        self._set_mode()
 
-        # load nerf-compatible format data.
-        if self.mode == 'colmap':
-            with open(os.path.join(self.root_path, 'transforms.json'), 'r') as f:
-                transform = json.load(f)
-        elif self.mode == 'blender':
-            # load all splits (train/valid/test), this is what instant-ngp in fact does...
-            if type == 'all':
-                transform_paths = glob.glob(os.path.join(self.root_path, '*.json'))
-                transform = None
-                for transform_path in transform_paths:
-                    with open(transform_path, 'r') as f:
-                        tmp_transform = json.load(f)
-                        if transform is None:
-                            transform = tmp_transform
-                        else:
-                            transform['frames'].extend(tmp_transform['frames'])
-            # load train and val split
-            elif type == 'trainval':
-                with open(os.path.join(self.root_path, f'transforms_train.json'), 'r') as f:
-                    transform = json.load(f)
-                with open(os.path.join(self.root_path, f'transforms_val.json'), 'r') as f:
-                    transform_val = json.load(f)
-                transform['frames'].extend(transform_val['frames'])
-            # only load one specified split
-            else:
-                with open(os.path.join(self.root_path, f'transforms_{type}.json'), 'r') as f:
-                    transform = json.load(f)
-
-        else:
-            raise NotImplementedError(f'unknown dataset mode: {self.mode}')
+        # load transforms
+        transform = self._load_transform()
 
         # load image size
         if 'h' in transform and 'w' in transform:
@@ -182,49 +149,13 @@ class NeRFDataset:
         
         # read images
         frames = transform["frames"]
-        #frames = sorted(frames, key=lambda d: d['file_path']) # why do I sort...
         
         # for colmap, manually interpolate a test set.
         if self.mode == 'colmap' and type == 'test':
-            
-            # choose two random poses, and interpolate between.
-            f0, f1 = np.random.choice(frames, 2, replace=False)
-            pose0 = nerf_matrix_to_ngp(np.array(f0['transform_matrix'], dtype=np.float32), scale=self.scale, offset=self.offset) # [4, 4]
-            pose1 = nerf_matrix_to_ngp(np.array(f1['transform_matrix'], dtype=np.float32), scale=self.scale, offset=self.offset) # [4, 4]
-            rots = Rotation.from_matrix(np.stack([pose0[:3, :3], pose1[:3, :3]]))
-            slerp = Slerp([0, 1], rots)
-
-            self.poses = []
-            self.images = None
-            self.semantic_images = None
-            for i in range(n_test + 1):
-                ratio = np.sin(((i / n_test) - 0.5) * np.pi) * 0.5 + 0.5
-                pose = np.eye(4, dtype=np.float32)
-                pose[:3, :3] = slerp(ratio).as_matrix()
-                pose[:3, 3] = (1 - ratio) * pose0[:3, 3] + ratio * pose1[:3, 3]
-                self.poses.append(pose)
-
-            # # the new way of making test video
-            # self.poses = []
-            # self.images = None
-            # self.semantic_images = None
-            # pose0 = np.array([
-            #     [1, 0, 0, 0], 
-            #     [0, 0, 1, 0], 
-            #     [0, 1, 0, 0], 
-            #     [0, 0, 0, 1]
-            # ], dtype=np.float32)
-            # pose0[:3, 3] = np.mean([np.array(f['transform_matrix'])[:3, 3] for f in frames], axis=0)
-            # pose0 = nerf_matrix_to_ngp(pose0, scale=self.scale, offset=self.offset) # [4, 4]
-            # poses_per_axis = n_test
-            # step = np.pi * 2 / poses_per_axis
-            
-            # # rotate over y
-            # for i in range(poses_per_axis):
-            #     curr_rot = Rotation.from_euler('xyz', [0, step * i, 0]).as_matrix()
-            #     curr_pose = pose0.copy()
-            #     curr_pose[:3, :3] = curr_pose[:3, :3].copy() @ curr_rot
-            #     self.poses.append(curr_pose)
+            colmap_test = self._create_colmap_test(frames, n_test)
+            self.poses = colmap_test['poses']
+            self.images = colmap_test['images']
+            self.semantic_images = colmap_test['semantic_images']
             
         elif self.mode == 'colmap' and type == 'train' and opt.load_saved:
             self.poses = []
@@ -232,22 +163,12 @@ class NeRFDataset:
             self.semantic_images = []
             self.depths = []
             load_spoiled(opt, self.poses, self.images, self.semantic_images, self.depths)
+
         else:
             # for colmap, manually split a valid set (the first frame).
             if self.mode == 'colmap':
                 if type == 'train':
-
                     if np.isclose(opt.eval_ratio, 0.0):
-                        # val_idx = [
-                        #     492, 141, 409,  31, 570, 593, 873, 399, 406, 272, 691,  70, 312,
-                        #     642, 500, 345, 351, 643, 772, 854,  14, 759, 692, 781, 526, 103,
-                        #     158, 721, 458, 549, 150, 567, 717, 403, 656, 866, 362, 389, 830,
-                        #     453, 676, 231,  97, 491, 620, 548, 204,  55,  65, 736, 635, 196,
-                        #     308, 294, 701, 278,  77, 892, 386, 596, 503, 258, 299, 773, 142,
-                        #     624, 523, 884, 775, 475, 842, 622,   8, 771, 380, 553, 862, 144,
-                        #     145, 311, 390, 735, 542,  34, 794, 482, 895, 506,  27, 320
-                        # ]
-                        # train_idx = [0, 60, 120, 200, 305, 552, 764, 899]
                         train_idx, val_idx = np.arange(len(frames)), []
                     else:
                         train_idx, val_idx = train_test_split(np.arange(len(frames)), test_size=opt.eval_ratio, random_state=opt.seed)
@@ -262,59 +183,11 @@ class NeRFDataset:
                     frames = [frames[i] for i in self.train_val_indexer['val_idx']]
                 # else 'all' or 'trainval' : use all frames
             
-            self.poses = []
-            self.images = []
-            self.semantic_images = []
-            self.depths = []
-            for f in tqdm.tqdm(frames, desc=f'Loading {type} data'):
-                f_path = os.path.join(self.root_path, f['file_path'])
-                if self.use_semantic:
-                    semantic_path = os.path.join(self.root_path, f['semantic_path'])
-                depth_path = os.path.join(self.root_path, f['depth_path']) if 'depth_path' in f else None
-                if self.mode == 'blender' and '.' not in os.path.basename(f_path):
-                    f_path += '.png' # so silly...
-
-                # there are non-exist paths in fox...
-                if not os.path.exists(f_path) or (self.use_semantic and not os.path.exists(semantic_path)):
-                    continue
-
-                pose = np.array(f['transform_matrix'], dtype=np.float32) # [4, 4]
-                pose = nerf_matrix_to_ngp(pose, scale=self.scale, offset=self.offset)
-
-                ### image read
-                image = cv2.imread(f_path, cv2.IMREAD_UNCHANGED) # [H, W, 3] o [H, W, 4]
-                if self.H is None or self.W is None:
-                    self.H = image.shape[0] // downscale
-                    self.W = image.shape[1] // downscale
-
-                # add support for the alpha channel as a mask.
-                if image.shape[-1] == 3: 
-                    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                else:
-                    image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA)
-
-                if image.shape[0] != self.H or image.shape[1] != self.W:
-                    image = cv2.resize(image, (self.W, self.H), interpolation=cv2.INTER_AREA)
-                    
-                image = image.astype(np.float32) / 255 # [H, W, 3/4]
-
-                ### semantic read
-                if self.use_semantic:
-                    semantic = cv2.imread(semantic_path, cv2.IMREAD_UNCHANGED)
-                    if semantic.shape[0] != self.H or semantic.shape[1] != self.W:
-                        semantic = cv2.resize(semantic, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
-
-                ### depth read
-                if not depth_path is None:
-                    depth = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED) / 1000.0  # uint16 mm depth, then turn depth from mm to meter
-                    if depth.shape[0] != self.H or depth.shape[1] != self.W:
-                        depth = cv2.resize(depth, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
-                    self.depths.append(depth)
-
-                self.poses.append(pose)
-                self.images.append(image)
-                if self.use_semantic:
-                    self.semantic_images.append(semantic)
+            # finally load images
+            loaded_images = self._load_images(frames, downscale)
+            self.poses = loaded_images['poses']
+            self.images = loaded_images['images']
+            self.semantic_images = loaded_images['semantic_images']
 
         ### spoil dataset
         if type == 'train' and not opt.load_saved:
@@ -329,7 +202,7 @@ class NeRFDataset:
 
             if opt.visualise_save:
                 save_spoiled(opt, self.poses, self.images, self.semantic_images)
-            
+
         self.poses = torch.from_numpy(np.stack(self.poses, axis=0)) # [N, 4, 4]
         if self.images is not None:
             self.images = torch.from_numpy(np.stack(self.images, axis=0)) # [N, H, W, C]
@@ -372,6 +245,160 @@ class NeRFDataset:
             if self.error_map is not None:
                 self.error_map = self.error_map.to(self.device)
 
+        self._load_intrinsics(transform, downscale)
+
+    def _set_mode(self):
+        # auto-detect transforms.json and split mode.
+        if os.path.exists(os.path.join(self.root_path, 'transforms.json')):
+            self.mode = 'colmap' # manually split, use view-interpolation for test.
+        elif os.path.exists(os.path.join(self.root_path, 'transforms_train.json')):
+            self.mode = 'blender' # provided split
+        else:
+            raise NotImplementedError(f'[NeRFDataset] Cannot find transforms*.json under {self.root_path}')
+
+    def _load_transform(self, ):
+        # load nerf-compatible format data.
+        if self.mode == 'colmap':
+            with open(os.path.join(self.root_path, 'transforms.json'), 'r') as f:
+                transform = json.load(f)
+        elif self.mode == 'blender':
+            # load all splits (train/valid/test), this is what instant-ngp in fact does...
+            if type == 'all':
+                transform_paths = glob.glob(os.path.join(self.root_path, '*.json'))
+                transform = None
+                for transform_path in transform_paths:
+                    with open(transform_path, 'r') as f:
+                        tmp_transform = json.load(f)
+                        if transform is None:
+                            transform = tmp_transform
+                        else:
+                            transform['frames'].extend(tmp_transform['frames'])
+            # load train and val split
+            elif type == 'trainval':
+                with open(os.path.join(self.root_path, f'transforms_train.json'), 'r') as f:
+                    transform = json.load(f)
+                with open(os.path.join(self.root_path, f'transforms_val.json'), 'r') as f:
+                    transform_val = json.load(f)
+                transform['frames'].extend(transform_val['frames'])
+            # only load one specified split
+            else:
+                with open(os.path.join(self.root_path, f'transforms_{type}.json'), 'r') as f:
+                    transform = json.load(f)
+        else:
+            raise NotImplementedError(f'unknown dataset mode: {self.mode}')
+        return transform
+
+    def _create_colmap_test(self, frames, n_test):
+        # choose two random poses, and interpolate between.
+        f0, f1 = np.random.choice(frames, 2, replace=False)
+        pose0 = nerf_matrix_to_ngp(np.array(f0['transform_matrix'], dtype=np.float32), scale=self.scale, offset=self.offset) # [4, 4]
+        pose1 = nerf_matrix_to_ngp(np.array(f1['transform_matrix'], dtype=np.float32), scale=self.scale, offset=self.offset) # [4, 4]
+        rots = Rotation.from_matrix(np.stack([pose0[:3, :3], pose1[:3, :3]]))
+        slerp = Slerp([0, 1], rots)
+
+        poses = []
+        for i in range(n_test + 1):
+            ratio = np.sin(((i / n_test) - 0.5) * np.pi) * 0.5 + 0.5
+            pose = np.eye(4, dtype=np.float32)
+            pose[:3, :3] = slerp(ratio).as_matrix()
+            pose[:3, 3] = (1 - ratio) * pose0[:3, 3] + ratio * pose1[:3, 3]
+            poses.append(pose)
+        return {
+            "poses": poses, 
+            "images": None, 
+            "semantic_images": None, 
+        }
+
+    def _create_colmap_test2(self, frames, n_test):
+        # the new way of making test video
+        poses = []
+        pose0 = np.array([
+            [1, 0, 0, 0], 
+            [0, 0, 1, 0], 
+            [0, 1, 0, 0], 
+            [0, 0, 0, 1]
+        ], dtype=np.float32)
+        pose0[:3, 3] = np.mean([np.array(f['transform_matrix'])[:3, 3] for f in frames], axis=0)
+        pose0 = nerf_matrix_to_ngp(pose0, scale=self.scale, offset=self.offset) # [4, 4]
+        poses_per_axis = n_test
+        step = np.pi * 2 / poses_per_axis
+        
+        # rotate over y
+        for i in range(poses_per_axis):
+            curr_rot = Rotation.from_euler('xyz', [0, step * i, 0]).as_matrix()
+            curr_pose = pose0.copy()
+            curr_pose[:3, :3] = curr_pose[:3, :3].copy() @ curr_rot
+            poses.append(curr_pose)
+
+        return {
+            "poses": poses, 
+            "images": None, 
+            "semantic_images": None, 
+        }
+
+    def _load_images(self, frames, downscale):
+        poses = []
+        images = []
+        semantic_images = []
+        depths = []
+        for f in tqdm.tqdm(frames, desc=f'Loading {self.type} data'):
+            f_path = os.path.join(self.root_path, f['file_path'])
+            if self.use_semantic:
+                semantic_path = os.path.join(self.root_path, f['semantic_path'])
+            depth_path = os.path.join(self.root_path, f['depth_path']) if 'depth_path' in f else None
+            if self.mode == 'blender' and '.' not in os.path.basename(f_path):
+                f_path += '.png' # so silly...
+
+            # there are non-exist paths in fox...
+            if not os.path.exists(f_path) or (self.use_semantic and not os.path.exists(semantic_path)):
+                continue
+
+            pose = np.array(f['transform_matrix'], dtype=np.float32) # [4, 4]
+            pose = nerf_matrix_to_ngp(pose, scale=self.scale, offset=self.offset)
+
+            ### image read
+            image = cv2.imread(f_path, cv2.IMREAD_UNCHANGED) # [H, W, 3] o [H, W, 4]
+            if self.H is None or self.W is None:
+                self.H = image.shape[0] // downscale
+                self.W = image.shape[1] // downscale
+
+            # add support for the alpha channel as a mask.
+            if image.shape[-1] == 3: 
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            else:
+                image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA)
+
+            if image.shape[0] != self.H or image.shape[1] != self.W:
+                image = cv2.resize(image, (self.W, self.H), interpolation=cv2.INTER_AREA)
+                
+            image = image.astype(np.float32) / 255 # [H, W, 3/4]
+
+            ### semantic read
+            if self.use_semantic:
+                semantic = cv2.imread(semantic_path, cv2.IMREAD_UNCHANGED)
+                if semantic.shape[0] != self.H or semantic.shape[1] != self.W:
+                    semantic = cv2.resize(semantic, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
+
+            ### depth read
+            if not depth_path is None:
+                depth = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED) / 1000.0  # uint16 mm depth, then turn depth from mm to meter
+                if depth.shape[0] != self.H or depth.shape[1] != self.W:
+                    depth = cv2.resize(depth, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
+                depths.append(depth)
+
+            poses.append(pose)
+            images.append(image)
+            if self.use_semantic:
+                semantic_images.append(semantic)
+
+        return {
+            "poses": poses, 
+            "images": images, 
+            "semantic_images": semantic_images, 
+            "depths": depths,
+        }
+
+    def _load_intrinsics(self, transform, downscale):
         # load intrinsics
         if 'fl_x' in transform or 'fl_y' in transform:
             fl_x = (transform['fl_x'] if 'fl_x' in transform else transform['fl_y']) / downscale
@@ -389,6 +416,8 @@ class NeRFDataset:
         cy = (transform['cy'] / downscale) if 'cy' in transform else (self.H / 2)
     
         self.intrinsics = np.array([fl_x, fl_y, cx, cy])
+
+
 
     def collate(self, index):
 
@@ -444,6 +473,10 @@ class NeRFDataset:
             results['inds_coarse'] = rays['inds_coarse']
 
         return results
+
+
+    def append(self, ):
+        pass
 
     def dataloader(self):
         size = len(self.poses)
