@@ -276,10 +276,11 @@ class NeRFRenderer(nn.Module):
         return {
             'depth': depth,
             'image': image,
-            'alphas': alphas, # for loss
+            'alphas': alphas, # for loss & choose new k
             'semantic_image': semantic_image,
             'uncertainty_image': uncertainty_image,
             'weights_sum': weights_sum,
+            'uncert': uncert, # for "choose new k"
         }
 
     # TODO: Change this function to use in project

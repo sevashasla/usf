@@ -452,6 +452,44 @@ class LPIPSMeter:
     def wandb_log(self, prefix):
         return {f"{prefix}/LPIPS": self.measure()}
 
+@torch.no_grad()
+def choose_new_k(model, holdout_dataset, k):
+    '''
+    Fucntion for active learning
+    '''
+    model.eval()
+    pres = []
+    posts = []
+
+    for data in holdout_dataset.dataloader():
+
+        rays_o = data['rays_o'] # [B, N, 3]
+        rays_d = data['rays_d'] # [B, N, 3]
+
+        images = data['images'] # [B, N, 3/4]
+        B, N, C = images.shape
+        SC = model.num_semantic_classes # number of semantic classes
+
+        bg_color = 1
+
+        outputs = model.render(
+            rays_o, rays_d, staged=False, 
+            bg_color=bg_color, perturb=True, force_all_rays=False if holdout_dataset.opt.patch_size == 1 else True, 
+            **vars(holdout_dataset.opt)
+        )
+
+        pred_uncert = outputs['uncertainty_image']
+        alphas = outputs['alphas']
+        alphas_shifted = torch.cat([torch.ones_like(alphas[..., :1]), 1 - alphas + 1e-15], dim=-1) # [N, T+t+1]
+        weights = alphas * torch.cumprod(alphas_shifted, dim=-1)[..., :-1] # [N, T+t]
+
+        posts.append()
+    
+    pres = torch.cat(pres, 0)
+    posts = torch.cat(posts, 0)
+    index = torch.topk(pres-posts, k)[1].cpu().numpy()
+    return index
+
 
 class Trainer(object):
     def __init__(self, 
@@ -502,6 +540,7 @@ class Trainer(object):
         self.report_metric_at_train = report_metric_at_train
         self.max_keep_ckpt = max_keep_ckpt
         self.eval_interval = eval_interval
+        self.save_interval = opt.save_interval
         self.use_checkpoint = use_checkpoint
         self.use_tensorboardX = use_tensorboardX
         self.time_stamp = time.strftime("%Y-%m-%d_%H-%M-%S")
@@ -711,7 +750,11 @@ class Trainer(object):
             loss_ce = torch.tensor(0.0)
 
         # RGBUncertaintyLoss
-        loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
+        # TODO
+        if pred_uncert.min() > 0:
+            loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
+        else:
+            loss_uncert = loss.mean()
 
         # patch-based rendering
         if self.opt.patch_size > 1:
@@ -815,6 +858,7 @@ class Trainer(object):
             loss_ce = self.criterion_semantic(pred_smntc.view(B * H * W, SC), gt_smntc.view(B * H * W))
         else:
             loss_ce = torch.tensor(0.0)
+        
         loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
         loss = (1 - self.omega) * loss + self.lambd * loss_ce + self.omega * loss_uncert
 
@@ -894,7 +938,7 @@ class Trainer(object):
             self.epoch = epoch
             self.train_one_epoch(train_loader)
 
-            if self.workspace is not None and self.local_rank == 0:
+            if self.workspace is not None and self.local_rank == 0 and self.epoch % self.save_interval == 0:
                 self.save_checkpoint(full=True, best=False)
 
             if self.epoch % self.eval_interval == 0:
@@ -1046,12 +1090,6 @@ class Trainer(object):
                 preds, truths, pred_smntc, gt_smntc, pred_depth, loss = self.train_step(data)
          
             self.scaler.scale(loss).backward()
-            with torch.no_grad():
-                sum_grads = 0.0
-                for p in self.model.parameters():
-                    if p.requires_grad:
-                        sum_grads += torch.mean(p.grad ** 2.0).item()
-                wandb.log({"train/grad_norm": sum_grads})
             self.scaler.step(self.optimizer)
             self.scaler.update()
             
@@ -1177,12 +1215,16 @@ class Trainer(object):
          
             self.scaler.scale(loss).backward()
             with torch.no_grad():
-                sum_grads = 0.0
+                sum_grads = []
                 for p in self.model.parameters():
                     if p.requires_grad:
-                        sum_grads += torch.mean(p.grad ** 2.0).item()
-                wandb.log({"train/grad_norm": sum_grads})
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1000.0) # TODO not hardcode
+                        if p.grad is None:
+                            continue
+                        sum_grads.append(torch.abs(p.grad).mean().item())
+                if len(sum_grads) == 0:
+                    sum_grads = [0.0]
+                wandb.log({"train/grad_norm": np.mean(sum_grads)})
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1000.0) # TODO not hardcode?
             self.scaler.step(self.optimizer)
             self.scaler.update()
 

@@ -233,7 +233,7 @@ def main():
             create_transforms(convert_script_path, datapath, w=w, h=h)
 
         runners = []
-        for i, torch_ngp_exp_config in enumerate(exp["torch_ngp"]):
+        for i, torch_ngp_exp_config in enumerate(exp.get("torch_ngp", [])):
             config = deepcopy(torch_ngp_exp_config)
             if config is None or not config.pop("do_run", True):
                 continue
@@ -245,7 +245,7 @@ def main():
             )
             runners.append(TorchNgpRunner(config))
 
-        for i, semantic_ngp_exp_config in enumerate(exp["semantic_ngp"]):
+        for i, semantic_ngp_exp_config in enumerate(exp.get("semantic_ngp", [])):
             config = deepcopy(semantic_ngp_exp_config)
             if config is None or not config.pop("do_run", True):
                 continue
@@ -258,7 +258,7 @@ def main():
             )
             runners.append(SemanticNgpRunner(config))
 
-        for i, semantic_nerf_exp_config in enumerate(exp["semantic_nerf"]):
+        for i, semantic_nerf_exp_config in enumerate(exp.get("semantic_nerf", [])):
             config = deepcopy(semantic_nerf_exp_config)
             if config is None or not config.pop("do_run", True):
                 continue

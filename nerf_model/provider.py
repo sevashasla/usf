@@ -229,7 +229,6 @@ class NeRFDataset:
 
         # [debug] uncomment to view examples of randomly generated poses.
         # visualize_poses(rand_poses(100, self.device, radius=self.radius).cpu().numpy())
-        
 
         if self.preload:
             self.poses = self.poses.to(self.device)
@@ -255,86 +254,6 @@ class NeRFDataset:
             self.mode = 'blender' # provided split
         else:
             raise NotImplementedError(f'[NeRFDataset] Cannot find transforms*.json under {self.root_path}')
-
-    def _load_transform(self, ):
-        # load nerf-compatible format data.
-        if self.mode == 'colmap':
-            with open(os.path.join(self.root_path, 'transforms.json'), 'r') as f:
-                transform = json.load(f)
-        elif self.mode == 'blender':
-            # load all splits (train/valid/test), this is what instant-ngp in fact does...
-            if type == 'all':
-                transform_paths = glob.glob(os.path.join(self.root_path, '*.json'))
-                transform = None
-                for transform_path in transform_paths:
-                    with open(transform_path, 'r') as f:
-                        tmp_transform = json.load(f)
-                        if transform is None:
-                            transform = tmp_transform
-                        else:
-                            transform['frames'].extend(tmp_transform['frames'])
-            # load train and val split
-            elif type == 'trainval':
-                with open(os.path.join(self.root_path, f'transforms_train.json'), 'r') as f:
-                    transform = json.load(f)
-                with open(os.path.join(self.root_path, f'transforms_val.json'), 'r') as f:
-                    transform_val = json.load(f)
-                transform['frames'].extend(transform_val['frames'])
-            # only load one specified split
-            else:
-                with open(os.path.join(self.root_path, f'transforms_{type}.json'), 'r') as f:
-                    transform = json.load(f)
-        else:
-            raise NotImplementedError(f'unknown dataset mode: {self.mode}')
-        return transform
-
-    def _create_colmap_test(self, frames, n_test):
-        # choose two random poses, and interpolate between.
-        f0, f1 = np.random.choice(frames, 2, replace=False)
-        pose0 = nerf_matrix_to_ngp(np.array(f0['transform_matrix'], dtype=np.float32), scale=self.scale, offset=self.offset) # [4, 4]
-        pose1 = nerf_matrix_to_ngp(np.array(f1['transform_matrix'], dtype=np.float32), scale=self.scale, offset=self.offset) # [4, 4]
-        rots = Rotation.from_matrix(np.stack([pose0[:3, :3], pose1[:3, :3]]))
-        slerp = Slerp([0, 1], rots)
-
-        poses = []
-        for i in range(n_test + 1):
-            ratio = np.sin(((i / n_test) - 0.5) * np.pi) * 0.5 + 0.5
-            pose = np.eye(4, dtype=np.float32)
-            pose[:3, :3] = slerp(ratio).as_matrix()
-            pose[:3, 3] = (1 - ratio) * pose0[:3, 3] + ratio * pose1[:3, 3]
-            poses.append(pose)
-        return {
-            "poses": poses, 
-            "images": None, 
-            "semantic_images": None, 
-        }
-
-    def _create_colmap_test2(self, frames, n_test):
-        # the new way of making test video
-        poses = []
-        pose0 = np.array([
-            [1, 0, 0, 0], 
-            [0, 0, 1, 0], 
-            [0, 1, 0, 0], 
-            [0, 0, 0, 1]
-        ], dtype=np.float32)
-        pose0[:3, 3] = np.mean([np.array(f['transform_matrix'])[:3, 3] for f in frames], axis=0)
-        pose0 = nerf_matrix_to_ngp(pose0, scale=self.scale, offset=self.offset) # [4, 4]
-        poses_per_axis = n_test
-        step = np.pi * 2 / poses_per_axis
-        
-        # rotate over y
-        for i in range(poses_per_axis):
-            curr_rot = Rotation.from_euler('xyz', [0, step * i, 0]).as_matrix()
-            curr_pose = pose0.copy()
-            curr_pose[:3, :3] = curr_pose[:3, :3].copy() @ curr_rot
-            poses.append(curr_pose)
-
-        return {
-            "poses": poses, 
-            "images": None, 
-            "semantic_images": None, 
-        }
 
     def _load_images(self, frames, downscale):
         poses = []
@@ -416,8 +335,86 @@ class NeRFDataset:
         cy = (transform['cy'] / downscale) if 'cy' in transform else (self.H / 2)
     
         self.intrinsics = np.array([fl_x, fl_y, cx, cy])
+    
+    def _load_transform(self, ):
+        # load nerf-compatible format data.
+        if self.mode == 'colmap':
+            with open(os.path.join(self.root_path, 'transforms.json'), 'r') as f:
+                transform = json.load(f)
+        elif self.mode == 'blender':
+            # load all splits (train/valid/test), this is what instant-ngp in fact does...
+            if type == 'all':
+                transform_paths = glob.glob(os.path.join(self.root_path, '*.json'))
+                transform = None
+                for transform_path in transform_paths:
+                    with open(transform_path, 'r') as f:
+                        tmp_transform = json.load(f)
+                        if transform is None:
+                            transform = tmp_transform
+                        else:
+                            transform['frames'].extend(tmp_transform['frames'])
+            # load train and val split
+            elif type == 'trainval':
+                with open(os.path.join(self.root_path, f'transforms_train.json'), 'r') as f:
+                    transform = json.load(f)
+                with open(os.path.join(self.root_path, f'transforms_val.json'), 'r') as f:
+                    transform_val = json.load(f)
+                transform['frames'].extend(transform_val['frames'])
+            # only load one specified split
+            else:
+                with open(os.path.join(self.root_path, f'transforms_{type}.json'), 'r') as f:
+                    transform = json.load(f)
+        else:
+            raise NotImplementedError(f'unknown dataset mode: {self.mode}')
+        return transform
 
+    def _create_colmap_test(self, frames, n_test):
+        # choose two random poses, and interpolate between.
+        f0, f1 = np.random.choice(frames, 2, replace=False)
+        pose0 = nerf_matrix_to_ngp(np.array(f0['transform_matrix'], dtype=np.float32), scale=self.scale, offset=self.offset) # [4, 4]
+        pose1 = nerf_matrix_to_ngp(np.array(f1['transform_matrix'], dtype=np.float32), scale=self.scale, offset=self.offset) # [4, 4]
+        rots = Rotation.from_matrix(np.stack([pose0[:3, :3], pose1[:3, :3]]))
+        slerp = Slerp([0, 1], rots)
 
+        poses = []
+        for i in range(n_test + 1):
+            ratio = np.sin(((i / n_test) - 0.5) * np.pi) * 0.5 + 0.5
+            pose = np.eye(4, dtype=np.float32)
+            pose[:3, :3] = slerp(ratio).as_matrix()
+            pose[:3, 3] = (1 - ratio) * pose0[:3, 3] + ratio * pose1[:3, 3]
+            poses.append(pose)
+        return {
+            "poses": poses, 
+            "images": None, 
+            "semantic_images": None, 
+        }
+
+    def _create_colmap_test2(self, frames, n_test):
+        # the new way of making test video
+        poses = []
+        pose0 = np.array([
+            [1, 0, 0, 0], 
+            [0, 0, 1, 0], 
+            [0, 1, 0, 0], 
+            [0, 0, 0, 1]
+        ], dtype=np.float32)
+        pose0[:3, 3] = np.mean([np.array(f['transform_matrix'])[:3, 3] for f in frames], axis=0)
+        pose0 = nerf_matrix_to_ngp(pose0, scale=self.scale, offset=self.offset) # [4, 4]
+        poses_per_axis = n_test
+        step = np.pi * 2 / poses_per_axis
+        
+        # rotate over y
+        for i in range(poses_per_axis):
+            curr_rot = Rotation.from_euler('xyz', [0, step * i, 0]).as_matrix()
+            curr_pose = pose0.copy()
+            curr_pose[:3, :3] = curr_pose[:3, :3].copy() @ curr_rot
+            poses.append(curr_pose)
+
+        return {
+            "poses": poses, 
+            "images": None, 
+            "semantic_images": None, 
+        }
 
     def collate(self, index):
 
@@ -475,8 +472,13 @@ class NeRFDataset:
         return results
 
 
-    def append(self, ):
-        pass
+    def append(self, holdout_dataset, ids):
+        for idx in ids:
+            self.poses.append(holdout_dataset.poses.pop(idx))
+            self.images.append(holdout_dataset.images.pop(idx))
+            if self.use_semantic:
+                self.semantic_images.append(holdout_dataset.semantic_images.pop(idx))
+
 
     def dataloader(self):
         size = len(self.poses)
