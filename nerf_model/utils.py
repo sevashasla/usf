@@ -457,33 +457,34 @@ def choose_new_k(model, holdout_dataset, k):
     '''
     Fucntion for active learning
     '''
-    model.eval()
     pres = []
     posts = []
 
     for data in holdout_dataset.dataloader():
+        model.eval()
 
         rays_o = data['rays_o'] # [B, N, 3]
         rays_d = data['rays_d'] # [B, N, 3]
+        images = data['images'] # [B, H, W, 3/4]
 
-        images = data['images'] # [B, N, 3/4]
-        B, N, C = images.shape
-        SC = model.num_semantic_classes # number of semantic classes
+        assert images.size(0) == 1 # batch_size must be equal to 1
 
+        # eval with fixed background color
         bg_color = 1
 
-        outputs = model.render(
-            rays_o, rays_d, staged=False, 
-            bg_color=bg_color, perturb=True, force_all_rays=False if holdout_dataset.opt.patch_size == 1 else True, 
-            **vars(holdout_dataset.opt)
-        )
+        outputs = model.render(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=False, **vars(holdout_dataset.opt))
 
-        pred_uncert = outputs['uncertainty_image']
-        alphas = outputs['alphas']
-        alphas_shifted = torch.cat([torch.ones_like(alphas[..., :1]), 1 - alphas + 1e-15], dim=-1) # [N, T+t+1]
-        weights = alphas * torch.cumprod(alphas_shifted, dim=-1)[..., :-1] # [N, T+t]
+        pred_uncert = outputs['uncertainty_image'] + 1e-9
+        pred_alpha = outputs['alphas']
 
-        posts.append()
+        alphas_shifted = torch.cat([torch.ones_like(pred_alpha[..., :1]), 1 - pred_alpha + 1e-15], dim=-1) # [N, T+t+1]
+        weights = pred_alpha * torch.cumprod(alphas_shifted, dim=-1)[..., :-1]
+        uncert_all = outputs['uncert_all'] + 1e-9
+
+        pre = uncert_all.sum([1,2])
+        post = (1. / (1. / uncert_all + weights ** 2.0 / pred_uncert)).sum([1 , 2])
+        pres.append(pre)
+        posts.append(post)
     
     pres = torch.cat(pres, 0)
     posts = torch.cat(posts, 0)
@@ -541,6 +542,8 @@ class Trainer(object):
         self.max_keep_ckpt = max_keep_ckpt
         self.eval_interval = eval_interval
         self.save_interval = opt.save_interval
+        self.active_learning_interval = opt.active_learning_interval
+        self.active_learning_num = opt.active_learning_num
         self.use_checkpoint = use_checkpoint
         self.use_tensorboardX = use_tensorboardX
         self.time_stamp = time.strftime("%Y-%m-%d_%H-%M-%S")
@@ -926,7 +929,7 @@ class Trainer(object):
 
     ### ------------------------------
 
-    def train(self, train_loader, valid_loader, max_epochs):
+    def train(self, train_loader, valid_loader, max_epochs, holdout_loader=None):
         # mark untrained region (i.e., not covered by any camera from the training dataset)
         if self.model.cuda_ray:
             self.model.mark_untrained_grid(train_loader._data.poses, train_loader._data.intrinsics)
@@ -944,6 +947,22 @@ class Trainer(object):
             if self.epoch % self.eval_interval == 0:
                 self.evaluate_one_epoch(valid_loader)
                 self.save_checkpoint(full=False, best=True)
+            
+            if self.epoch % self.active_learning_interval == 0:
+                # TODO
+                # self.active_learning(train_dataset, holdout_dataset)
+                pass
+
+    def active_learning(self, train_dataset, holdout_dataset):
+        if holdout_dataset is None or len(holdout_dataset) == 0:
+            return 
+        # it is new indices to extend train dataset
+        new_k = choose_new_k(
+            self.model, holdout_dataset, 
+            min(len(holdout_dataset), self.active_learning_num), # use all samples at the end
+        )
+        train_dataset.append(new_k, holdout_dataset)
+        holdout_dataset.drop(new_k)
 
     def evaluate(self, loader, name=None):
         self.evaluate_one_epoch(loader, name)

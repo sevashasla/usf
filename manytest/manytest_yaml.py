@@ -39,8 +39,6 @@ class NgpRunner:
         workspace = config.pop("name", f"{kwargs['place']}_{kwargs['sequence']}_{kwargs['w']}_{kwargs['h']}_{kwargs['i']}")
         config["workspace"] = f"{cls.store_result}/{workspace}"
         config["datapath"] = kwargs['datapath']
-        config["W"] = kwargs['w']
-        config["H"] = kwargs['h']
         config["group"] = kwargs['group']
         config.setdefault("eval_interval", config["epochs"] // 5)
 

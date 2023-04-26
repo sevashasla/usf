@@ -44,6 +44,10 @@ if __name__ == '__main__':
     parser.add_argument('--lambd', type=float, default=1.0, help="coeff for losses")
     parser.add_argument('--save_interval', type=int, default=10, help="how often to save")
 
+    ### active learning
+    parser.add_argument('--active_learning_interval', type=int, default=50, help="how often to apply active learning")
+    parser.add_argument('--active_learning_num', type=int, default=4, help="how often to apply active learning")
+
     ### network backbone options
     parser.add_argument('--fp16', action='store_true', help="use amp mixed precision training")
     parser.add_argument('--ff', action='store_true', help="use fully-fused MLP")
@@ -126,7 +130,7 @@ if __name__ == '__main__':
     parser.add_argument('--visualise_save',  action='store_true', help='whether to save the noisy labels into harddrive for later usage')
     parser.add_argument('--load_saved',  action='store_true', help='use trained noisy labels for training to ensure consistency betwwen experiments')
 
-    parser.add_argument('--path_to_save_tm', default="", type=str)
+    parser.add_argument('--path_to_save_tm', default="", type=str, help="where to store json with rendering time")
 
     # wandb
     parser.add_argument('--group', type=str)
@@ -255,10 +259,12 @@ if __name__ == '__main__':
             gui.render()
         
         else:
-            valid_loader = NeRFDataset(
+            valid_dataset = NeRFDataset(
                 opt, device=device, type='val', downscale=1, 
                 semantic_remap=nerf_dataset.semantic_remap,
-                train_val_indexer=nerf_dataset.train_val_indexer).dataloader()
+                train_val_indexer=nerf_dataset.train_val_indexer
+            )
+            valid_loader = valid_dataset.dataloader()
 
             print(f"[INFO] MAX_EPOCH: {opt.epochs}, ITERS: {iters}")
 

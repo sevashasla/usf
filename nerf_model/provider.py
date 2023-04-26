@@ -471,14 +471,26 @@ class NeRFDataset:
 
         return results
 
-
     def append(self, holdout_dataset, ids):
-        for idx in ids:
-            self.poses.append(holdout_dataset.poses.pop(idx))
-            self.images.append(holdout_dataset.images.pop(idx))
-            if self.use_semantic:
-                self.semantic_images.append(holdout_dataset.semantic_images.pop(idx))
+        self.poses = torch.cat([self.poses, holdout_dataset.poses[ids]])
+        self.images = torch.cat([self.images, holdout_dataset.images[ids]])
+        if self.use_semantic:
+            self.semantic_images = torch.cat([self.semantic_images, holdout_dataset.semantic_images[ids]])
+        if self.error_map:
+            self.error_map = torch.cat([self.error_map, holdout_dataset.error_map[ids]])
+        
+    def drop(self, ids):
+        ids_keep = torch.ones(len(self), dtype=bool)
+        ids_keep[ids] = False
+        self.poses = self.poses[ids_keep]
+        self.images = self.images[ids_keep]
+        if self.use_semantic:
+            self.semantic_images = self.semantic_images[ids_keep]
+        if self.error_map:
+            self.semantic_images = self.semantic_images[ids_keep]
 
+    def __len__(self):
+        return len(self.poses)
 
     def dataloader(self):
         size = len(self.poses)
