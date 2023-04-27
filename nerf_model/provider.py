@@ -169,9 +169,18 @@ class NeRFDataset:
             if self.mode == 'colmap':
                 if type == 'train':
                     if np.isclose(opt.eval_ratio, 0.0):
-                        train_idx, val_idx = np.arange(len(frames)), []
+                        train_idx, _ = train_test_split(
+                            np.arange(len(frames)), 
+                            train_size=opt.train_ratio, 
+                            random_state=opt.seed
+                        )
+                        val_idx = []
                     else:
-                        train_idx, val_idx = train_test_split(np.arange(len(frames)), test_size=opt.eval_ratio, random_state=opt.seed)
+                        train_idx, val_idx = train_test_split(
+                            np.arange(len(frames)), 
+                            test_size=opt.eval_ratio, train_size=opt.train_ratio, 
+                            random_state=opt.seed
+                        )
 
                     self.train_val_indexer = {
                         "train_idx": train_idx,
@@ -457,7 +466,7 @@ class NeRFDataset:
                 images = torch.gather(images.view(B, -1, C), 1, torch.stack(C * [rays['inds']], -1)) # [B, N, 3/4]
             results['images'] = images
 
-        if self.use_semantic:
+        if self.use_semantic and self.semantic_images is not None:
             semantic_images = self.semantic_images[index].to(self.device)
             if self.training:
                 semantic_images = torch.gather(semantic_images.view(B, -1), 1, rays['inds']) # [B, N]

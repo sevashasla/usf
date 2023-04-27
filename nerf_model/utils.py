@@ -31,6 +31,7 @@ from torch_ema import ExponentialMovingAverage
 from packaging import version as pver
 import lpips
 from torchmetrics.functional import structural_similarity_index_measure
+from torchmetrics import ConfusionMatrix
 
 from sklearn.metrics import confusion_matrix
 
@@ -275,21 +276,22 @@ def nanmean(data, **args):
 
 
 class SegmentationMeter:
-    def __init__(self, num_semantic_classes, ignore_label=-1):
+    def __init__(self, num_semantic_classes, ignore_label=-1, device="cuda"):
         self.num_semantic_classes = num_semantic_classes
         self.ignore_label = ignore_label
-        self.preds = []
-        self.truths = []
+        self.device = device
+        self.conf_mat = torch.empty(
+            (self.num_semantic_classes, self.num_semantic_classes), 
+            dtype=torch.long).to(self.device)
+        self.conf_mat_calculate = ConfusionMatrix(
+            task='multiclass', 
+            num_classes=self.num_semantic_classes).to(self.device)
 
     def clear(self):
-        self.preds = []
-        self.truths = []
-
+        self.conf_mat *= 0.0
+    
     def measure(self):
-        # TODO: Change count of metrics in GPU!!!
-        true_labels = np.hstack(self.truths)
-        predicted_labels = np.hstack(self.preds)
-        conf_mat = confusion_matrix(true_labels, predicted_labels, labels=list(range(self.num_semantic_classes)))
+        conf_mat = self.conf_mat.cpu().numpy()
         norm_conf_mat = np.transpose(
             np.transpose(conf_mat) / conf_mat.astype(np.float).sum(axis=1))
 
@@ -307,18 +309,20 @@ class SegmentationMeter:
         miou_valid_class = np.mean(ious[exsiting_class_mask])
         return miou, miou_valid_class, total_accuracy, class_average_accuracy, ious
 
+    @torch.no_grad()
     def update(self, preds, truths):
         # TODO: may be bug here if [B, H, W] and W = self.num_semantic_classes
         if preds.ndim >= 3 and preds.shape[-1] == self.num_semantic_classes:
             preds = torch.argmax(preds, dim=-1)
         valid_pix_idx = truths.flatten() != self.ignore_label
-        preds = preds.flatten()[valid_pix_idx]
-        truths = truths.flatten()[valid_pix_idx]
-        self.preds.append(preds.detach().cpu().numpy())
-        self.truths.append(truths.detach().cpu().numpy())
+        preds = preds.flatten()[valid_pix_idx].detach()
+        truths = truths.flatten()[valid_pix_idx].detach()
+        
+        # update conf matrix
+        self.conf_mat += self.conf_mat_calculate(preds, truths)
 
     def write(self, writer, global_step, prefix=""):
-        writer.add_text(os.path.join(prefix, "SSIM"), self.report(), global_step)
+        writer.add_text(os.path.join(prefix, "---"), self.report(), global_step)
 
     def report(self):
         miou, miou_valid_class, total_accuracy, class_average_accuracy, ious = self.measure()
@@ -332,12 +336,14 @@ class SegmentationMeter:
             f"{prefix}/total_accuracy" : total_accuracy, 
             f"{prefix}/class_average_accuracy" : class_average_accuracy, 
         }
-        
+
 
 class PSNRMeter:
     def __init__(self):
         self.V = 0
         self.N = 0
+        self.name = "psnr"
+        self.sign = 1.0
 
     def clear(self):
         self.V = 0
@@ -378,6 +384,8 @@ class SSIMMeter:
     def __init__(self, device=None):
         self.V = 0
         self.N = 0
+        self.name = "ssim"
+        self.sign = 1.0
 
         self.device = device if device is not None else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -419,6 +427,8 @@ class LPIPSMeter:
         self.V = 0
         self.N = 0
         self.net = net
+        self.name = "lpips"
+        self.sign = -1.0
 
         self.device = device if device is not None else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.fn = lpips.LPIPS(net=net).eval().to(self.device)
@@ -493,6 +503,32 @@ def choose_new_k(model, holdout_dataset, k):
     return index
 
 
+class EarlyStop:
+    def __init__(self, alpha=1e-3, last=3):
+        '''
+        Do one need to do early stopping
+
+        ---
+        arguments
+        alpha: float
+            - if relative effect if smaller than alpha, than stop
+        last: int
+            - how many last observation to consider
+        bigger_is_better: bool
+            - Bigger metric => better result
+        '''
+        self.alpha = alpha
+        self.last = last
+        self.metrics = []
+
+    def __call__(self, new_res):
+        last_mean = np.mean(self.metrics[-self.last:])
+        if np.abs(new_res - last_mean) / (np.abs(last_mean) + 1e-9) < self.alpha:
+            return True
+        self.metrics.append(new_res)
+        return False
+
+
 class Trainer(object):
     def __init__(self, 
                  name, # name of this experiment
@@ -524,6 +560,8 @@ class Trainer(object):
                  use_tensorboardX=True, # whether to use tensorboard for logging
                  scheduler_update_every_step=False, # whether to call scheduler.step() after every train step
                  semantic_remap=None, # just a dict
+                 early_stop=None,
+                 metric_to_monitor="lpips",
         ):
         
         self.name = name
@@ -556,6 +594,7 @@ class Trainer(object):
         self.use_semantic = not opt.not_use_semantic
         self.lambd = lambd
         self.omega = omega
+        self.metric_to_monitor = metric_to_monitor
 
         # create colormap
         self.sem_colormap = label_colormap(opt.total_num_classes)
@@ -597,6 +636,10 @@ class Trainer(object):
             self.ema = ExponentialMovingAverage(self.model.parameters(), decay=ema_decay)
         else:
             self.ema = None
+
+        if early_stop is None:
+            early_stop = EarlyStop(1e-3, 3)
+        self.early_stop = early_stop
 
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.fp16)
 
@@ -950,11 +993,17 @@ class Trainer(object):
             if self.epoch % self.eval_interval == 0:
                 self.evaluate_one_epoch(valid_loader)
                 self.save_checkpoint(full=False, best=True)
+
+                # maybe do early stop
+                if self.early_stop(self.stats["results"]["metrics"][-1][self.metric_to_monitor]):
+                    print(f"[INFO] Early stopping at {epoch}")
+                    break
             
             if self.epoch % self.active_learning_interval == 0:
                 # TODO
                 # self.active_learning(train_dataset, holdout_dataset)
                 pass
+                
 
     def active_learning(self, train_dataset, holdout_dataset):
         if holdout_dataset is None or len(holdout_dataset) == 0:
@@ -1421,8 +1470,12 @@ class Trainer(object):
         if self.local_rank == 0:
             pbar.close()
             if not self.use_loss_as_metric and len(self.metrics) > 0:
-                result = self.metrics[0].measure()
-                self.stats["results"]['metrics'].append(result if self.best_mode == 'min' else - result) # if max mode, use -result
+                rbg_metrics_item = {}
+                for metric in self.metrics:
+                    result = metric.measure()
+                    rbg_metrics_item[metric.name] = result
+                self.stats["results"]['metrics'].append(rbg_metrics_item) # if max mode, use -result
+                # result if self.best_mode == 'min' else - result
             else:
                 self.stats["results"]['metrics'].append(average_loss) # if no metric, choose best by min loss
             
@@ -1492,9 +1545,10 @@ class Trainer(object):
 
         else:    
             if len(self.stats["results"]['metrics']) > 0:
-                if self.stats["best_result"] is None or self.stats["results"]['metrics'][-1] < self.stats["best_result"]:
-                    self.log(f"[INFO] New best result: {self.stats['best_result']} --> {self.stats['results']['metrics'][-1]}")
-                    self.stats["best_result"] = self.stats["results"]['metrics'][-1]
+                last = self.stats["results"]['metrics'][-1][self.metric_to_monitor]
+                if self.stats["best_result"] is None or last < self.stats["best_result"]:
+                    self.log(f"[INFO] New best result: {self.stats['best_result']} --> {last}")
+                    self.stats["best_result"] = last
 
                     # save ema results 
                     if self.ema is not None:

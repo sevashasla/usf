@@ -27,7 +27,9 @@ if __name__ == '__main__':
     parser.add_argument('--save_eval_images', action='store_true', help="save eval images or not")
     
     parser.add_argument('--eval_ratio', type=float, default=0.2)
+    parser.add_argument('--train_ratio', type=float, default=None)
     parser.add_argument('--total_num_classes', type=int, default=101) # from replica dataset
+    parser.add_argument('--metric_to_monitor', type=str, default="lpips") # from replica dataset
 
     ### training options
     # parser.add_argument('--iters', type=int, default=30000, help="training iters")
@@ -156,6 +158,9 @@ if __name__ == '__main__':
     if opt.test and opt.num_semantic_classes is None and not opt.not_use_semantic:
         raise RuntimeError("'num_semantic_classes' must be known if test")
     
+    if opt.train_ratio is None:
+        opt.train_ratio = 1.0 - opt.eval_ratio
+
     seed_everything(opt.seed)
 
     criterion = torch.nn.MSELoss(reduction='none')
@@ -195,7 +200,8 @@ if __name__ == '__main__':
             fp16=opt.fp16, 
             metrics=metrics, segmentation_metrics=segmentation_metrics, depth_metrics=depth_metrics,
             use_checkpoint=opt.ckpt,
-            semantic_remap=SemanticRemap(opt.semantic_remap) if opt.semantic_remap else None
+            semantic_remap=SemanticRemap(opt.semantic_remap) if opt.semantic_remap else None, 
+            metric_to_monitor=opt.metric_to_monitor, 
         )
 
         if opt.gui:
@@ -254,6 +260,7 @@ if __name__ == '__main__':
             use_checkpoint=opt.ckpt, 
             eval_interval=opt.eval_interval,
             semantic_remap=nerf_dataset.semantic_remap,
+            metric_to_monitor=opt.metric_to_monitor, 
         )
 
         if opt.gui:
