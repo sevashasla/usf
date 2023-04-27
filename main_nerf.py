@@ -24,6 +24,8 @@ if __name__ == '__main__':
     parser.add_argument('--workspace', type=str, default='workspace')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--eval_interval', type=int, default=5)
+    parser.add_argument('--save_eval_images', action='store_true', help="save eval images or not")
+    
     parser.add_argument('--eval_ratio', type=float, default=0.2)
     parser.add_argument('--total_num_classes', type=int, default=101) # from replica dataset
 

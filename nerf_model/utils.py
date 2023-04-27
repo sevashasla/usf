@@ -286,6 +286,7 @@ class SegmentationMeter:
         self.truths = []
 
     def measure(self):
+        # TODO: Change count of metrics in GPU!!!
         true_labels = np.hstack(self.truths)
         predicted_labels = np.hstack(self.preds)
         conf_mat = confusion_matrix(true_labels, predicted_labels, labels=list(range(self.num_semantic_classes)))
@@ -541,6 +542,7 @@ class Trainer(object):
         self.report_metric_at_train = report_metric_at_train
         self.max_keep_ckpt = max_keep_ckpt
         self.eval_interval = eval_interval
+        self.save_eval_images = opt.save_eval_images
         self.save_interval = opt.save_interval
         self.active_learning_interval = opt.active_learning_interval
         self.active_learning_num = opt.active_learning_num
@@ -1385,28 +1387,29 @@ class Trainer(object):
                     save_path_depth = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_depth.png')
 
                     #self.log(f"==> Saving validation image to {save_path}")
-                    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                    if self.save_eval_images:
+                        os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-                    if self.opt.color_space == 'linear':
-                        preds = linear_to_srgb(preds)
+                        if self.opt.color_space == 'linear':
+                            preds = linear_to_srgb(preds)
 
-                    pred = preds[0].detach().cpu().numpy()
-                    pred = (pred * 255).astype(np.uint8)
-                    
-                    if self.use_semantic:
-                        pred_smntc = preds_smntc[0].detach().cpu().numpy()
-                        pred_smntc = pred_smntc.argmax(axis=-1).astype(np.uint8)
+                        pred = preds[0].detach().cpu().numpy()
+                        pred = (pred * 255).astype(np.uint8)
+                        
+                        if self.use_semantic:
+                            pred_smntc = preds_smntc[0].detach().cpu().numpy()
+                            pred_smntc = pred_smntc.argmax(axis=-1).astype(np.uint8)
 
-                    pred_uncert = preds_uncert[0].detach().cpu().numpy()
+                        pred_uncert = preds_uncert[0].detach().cpu().numpy()
 
-                    pred_depth = preds_depth[0].detach().cpu().numpy()
-                    pred_depth = (pred_depth * 255).astype(np.uint8)
-                    
-                    cv2.imwrite(save_path, cv2.cvtColor(pred, cv2.COLOR_RGB2BGR))
-                    if self.use_semantic:
-                        cv2.imwrite(save_path_smntc, pred_smntc)
-                    cv2.imwrite(save_path_uncert, pred_uncert)
-                    cv2.imwrite(save_path_depth, pred_depth)
+                        pred_depth = preds_depth[0].detach().cpu().numpy()
+                        pred_depth = (pred_depth * 255).astype(np.uint8)
+                        
+                        cv2.imwrite(save_path, cv2.cvtColor(pred, cv2.COLOR_RGB2BGR))
+                        if self.use_semantic:
+                            cv2.imwrite(save_path_smntc, pred_smntc)
+                        cv2.imwrite(save_path_uncert, pred_uncert)
+                        cv2.imwrite(save_path_depth, pred_depth)
 
                     pbar.set_description(f"loss={loss_val:.4f} ({total_loss/self.local_step:.4f})")
                     pbar.update(loader.batch_size)
