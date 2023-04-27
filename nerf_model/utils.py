@@ -310,7 +310,7 @@ class SegmentationMeter:
         # TODO: may be bug here if [B, H, W] and W = self.num_semantic_classes
         if preds.ndim >= 3 and preds.shape[-1] == self.num_semantic_classes:
             preds = torch.argmax(preds, dim=-1)
-        valid_pix_idx = preds.flatten() != self.ignore_label
+        valid_pix_idx = truths.flatten() != self.ignore_label
         preds = preds.flatten()[valid_pix_idx]
         truths = truths.flatten()[valid_pix_idx]
         self.preds.append(preds.detach().cpu().numpy())
@@ -843,14 +843,15 @@ class Trainer(object):
             gt_rgb = images[..., :3] * images[..., 3:] + bg_color * (1 - images[..., 3:])
         else:
             gt_rgb = images
-        gt_smntc = semantic_images
         
         outputs = self.model.render(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=False, **vars(self.opt))
 
         pred_rgb = outputs['image'].reshape(B, H, W, 3)
         if self.use_semantic:
+            gt_smntc = semantic_images
             pred_smntc = outputs['semantic_image'].reshape(B, H, W, SC)
         else:
+            gt_smntc = None
             pred_smntc = None
         pred_uncert = outputs['uncertainty_image'].reshape(B, H, W, 1)
         pred_depth = outputs['depth'].reshape(B, H, W)
@@ -1352,6 +1353,10 @@ class Trainer(object):
                         dist.all_gather(preds_uncert_list, preds_uncert)
                         preds_uncert = torch.cat(preds_uncert_list, dim=0)
 
+                        gt_smntc_list = [torch.zeros_like(gt_smntc).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
+                        dist.all_gather(gt_smntc_list, gt_smntc)
+                        gt_smntc = torch.cat(gt_smntc_list, dim=0)
+                    
                     preds_depth_list = [torch.zeros_like(preds_depth).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
                     dist.all_gather(preds_depth_list, preds_depth)
                     preds_depth = torch.cat(preds_depth_list, dim=0)
@@ -1359,10 +1364,6 @@ class Trainer(object):
                     truths_list = [torch.zeros_like(truths).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
                     dist.all_gather(truths_list, truths)
                     truths = torch.cat(truths_list, dim=0)
-
-                    gt_smntc_list = [torch.zeros_like(gt_smntc).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
-                    dist.all_gather(gt_smntc_list, gt_smntc)
-                    gt_smntc = torch.cat(gt_smntc_list, dim=0)
                 
                 loss_val = loss.item()
                 total_loss += loss_val

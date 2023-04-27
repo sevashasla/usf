@@ -233,7 +233,7 @@ if __name__ == '__main__':
 
         metrics = [PSNRMeter(), LPIPSMeter(device=device), SSIMMeter(device=device)]
         if not opt.not_use_semantic:
-            segmentation_metrics = [SegmentationMeter(opt.num_semantic_classes)]
+            segmentation_metrics = [SegmentationMeter(num_semantic_classes)]
         else:
             segmentation_metrics = []
         # TODO
