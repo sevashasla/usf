@@ -280,7 +280,7 @@ class SegmentationMeter:
         self.num_semantic_classes = num_semantic_classes
         self.ignore_label = ignore_label
         self.device = device
-        self.conf_mat = torch.empty(
+        self.conf_mat = torch.zeros(
             (self.num_semantic_classes, self.num_semantic_classes), 
             dtype=torch.long).to(self.device)
         self.conf_mat_calculate = ConfusionMatrix(
@@ -288,7 +288,7 @@ class SegmentationMeter:
             num_classes=self.num_semantic_classes).to(self.device)
 
     def clear(self):
-        self.conf_mat *= 0.0
+        self.conf_mat *= 0
     
     def measure(self):
         conf_mat = self.conf_mat.cpu().numpy()
@@ -490,7 +490,7 @@ def choose_new_k(model, holdout_dataset, k):
 
         alphas_shifted = torch.cat([torch.ones_like(pred_alpha[..., :1]), 1 - pred_alpha + 1e-15], dim=-1) # [N, T+t+1]
         weights = pred_alpha * torch.cumprod(alphas_shifted, dim=-1)[..., :-1]
-        uncert_all = outputs['uncert_all'] + 1e-9
+        uncert_all = outputs['uncertainty_all'] + 1e-9
 
         pre = uncert_all.sum([1,2])
         post = (1. / (1. / uncert_all + weights ** 2.0 / pred_uncert)).sum([1 , 2])
@@ -522,9 +522,10 @@ class EarlyStop:
         self.metrics = []
 
     def __call__(self, new_res):
-        last_mean = np.mean(self.metrics[-self.last:])
-        if np.abs(new_res - last_mean) / (np.abs(last_mean) + 1e-9) < self.alpha:
-            return True
+        if len(self.metrics) > 0:
+            last_mean = np.mean(self.metrics[-self.last:])
+            if np.abs(new_res - last_mean) / (np.abs(last_mean) + 1e-9) < self.alpha:
+                return True
         self.metrics.append(new_res)
         return False
 
@@ -849,7 +850,8 @@ class Trainer(object):
 
         # TODO: Maybe delete loss of MSE?
         loss = (1 - self.omega) * loss + self.lambd * loss_ce + self.omega * loss_uncert
-        wandb.log({**losses_to_log, "train/sum_loss": loss.item()})
+        if not self.opt.no_wandb:
+            wandb.log({**losses_to_log, "train/sum_loss": loss.item()})
         # loss = self.lambd * loss_ce + self.omega * loss_uncert
 
         # extra loss
@@ -975,15 +977,17 @@ class Trainer(object):
 
     ### ------------------------------
 
-    def train(self, train_loader, valid_loader, max_epochs, holdout_loader=None):
-        # mark untrained region (i.e., not covered by any camera from the training dataset)
-        if self.model.cuda_ray:
-            self.model.mark_untrained_grid(train_loader._data.poses, train_loader._data.intrinsics)
-
-        # get a ref to error_map
-        self.error_map = train_loader._data.error_map
-        
+    def train(self, train_dataset, valid_dataset, max_epochs, holdout_dataset=None):
         for epoch in range(self.epoch + 1, max_epochs + 1):
+            train_loader = train_dataset.dataloader()
+            valid_loader = valid_dataset.dataloader()
+            # mark untrained region (i.e., not covered by any camera from the training dataset)
+            if self.model.cuda_ray:
+                self.model.mark_untrained_grid(train_loader._data.poses, train_loader._data.intrinsics)
+
+            # get a ref to error_map
+            self.error_map = train_loader._data.error_map
+        
             self.epoch = epoch
             self.train_one_epoch(train_loader)
 
@@ -994,15 +998,15 @@ class Trainer(object):
                 self.evaluate_one_epoch(valid_loader)
                 self.save_checkpoint(full=False, best=True)
 
-                # maybe do early stop
-                if self.early_stop(self.stats["results"]["metrics"][-1][self.metric_to_monitor]):
+                # maybe do early stop. ONLY if use metrics
+                if not self.use_loss_as_metric and self.early_stop(self.stats["results"]["metrics"][-1][self.metric_to_monitor]):
                     print(f"[INFO] Early stopping at {epoch}")
                     break
             
             if self.epoch % self.active_learning_interval == 0:
-                # TODO
-                # self.active_learning(train_dataset, holdout_dataset)
-                pass
+                print(f"[INFO] active learning at {epoch}")
+                self.active_learning(train_dataset, holdout_dataset)
+                print(f"[INFO] new train size {len(train_dataset):5}, new holdout size {len(holdout_dataset):5}")
                 
 
     def active_learning(self, train_dataset, holdout_dataset):
@@ -1013,7 +1017,7 @@ class Trainer(object):
             self.model, holdout_dataset, 
             min(len(holdout_dataset), self.active_learning_num), # use all samples at the end
         )
-        train_dataset.append(new_k, holdout_dataset)
+        train_dataset.append(holdout_dataset, new_k)
         holdout_dataset.drop(new_k)
 
     def evaluate(self, loader, name=None):
@@ -1121,7 +1125,8 @@ class Trainer(object):
                     "video/semantic": wandb.Video(os.path.join(save_path, f'{name}_smntc.mp4'), format="mp4"),
                     "video/semantic_uncert": wandb.Video(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), format="mp4"),
                 }
-            wandb.log(to_log_videos)
+            if not self.opt.no_wandb:
+                wandb.log(to_log_videos)
 
 
         self.log(f"==> Finished Test.")
@@ -1294,7 +1299,8 @@ class Trainer(object):
                         sum_grads.append(torch.abs(p.grad).mean().item())
                 if len(sum_grads) == 0:
                     sum_grads = [0.0]
-                wandb.log({"train/grad_norm": np.mean(sum_grads)})
+                if not self.opt.no_wandb:
+                    wandb.log({"train/grad_norm": np.mean(sum_grads)})
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1000.0) # TODO not hardcode?
             self.scaler.step(self.optimizer)
             self.scaler.update()
@@ -1340,7 +1346,8 @@ class Trainer(object):
                     self.log(dmetric.report(), style="red")
                     metrics_to_report.update(dmetric.wandb_log("train"))
                 self._clear_metrics()
-                wandb.log(metrics_to_report)
+                if not self.opt.no_wandb:
+                    wandb.log(metrics_to_report)
 
         if not self.scheduler_update_every_step:
             if isinstance(self.lr_scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -1498,7 +1505,8 @@ class Trainer(object):
                 metrics_to_report.update(dmetric.wandb_log("eval"))
                 self.log(dmetric.report(), style="blue")
             self._clear_metrics()
-            wandb.log(metrics_to_report)
+            if not self.opt.no_wandb:
+                wandb.log(metrics_to_report)
 
         if self.ema is not None:
             self.ema.restore()
@@ -1545,7 +1553,10 @@ class Trainer(object):
 
         else:    
             if len(self.stats["results"]['metrics']) > 0:
-                last = self.stats["results"]['metrics'][-1][self.metric_to_monitor]
+                if self.use_loss_as_metric:
+                    last = self.stats["results"]['metrics'][-1]
+                else:
+                    last = self.stats["results"]['metrics'][-1][self.metric_to_monitor]
                 if self.stats["best_result"] is None or last < self.stats["best_result"]:
                     self.log(f"[INFO] New best result: {self.stats['best_result']} --> {last}")
                     self.stats["best_result"] = last

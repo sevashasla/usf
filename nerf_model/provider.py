@@ -104,7 +104,7 @@ def rand_poses(size, device, radius=1, theta_range=[np.pi/3, 2*np.pi/3], phi_ran
 
 
 class NeRFDataset:
-    def __init__(self, opt, device, type='train', downscale=1, n_test=100, train_val_indexer=None, semantic_remap=None):
+    def __init__(self, opt, device, type='train', downscale=1, n_test=100, tvh_indexer=None, semantic_remap=None):
         super().__init__()
         
         self.opt = opt
@@ -119,7 +119,7 @@ class NeRFDataset:
         self.fp16 = opt.fp16 # if preload, load into fp16.
         self.training = self.type in ['train', 'all', 'trainval']
         self.num_rays = self.opt.num_rays if self.training else -1
-        self.train_val_indexer = train_val_indexer
+        self.tvh_indexer = tvh_indexer
         self.use_semantic = not opt.not_use_semantic
 
         self.rand_pose = opt.rand_pose
@@ -168,28 +168,19 @@ class NeRFDataset:
             # for colmap, manually split a valid set (the first frame).
             if self.mode == 'colmap':
                 if type == 'train':
-                    if np.isclose(opt.eval_ratio, 0.0):
-                        train_idx, _ = train_test_split(
-                            np.arange(len(frames)), 
-                            train_size=opt.train_ratio, 
-                            random_state=opt.seed
-                        )
-                        val_idx = []
-                    else:
-                        train_idx, val_idx = train_test_split(
-                            np.arange(len(frames)), 
-                            test_size=opt.eval_ratio, train_size=opt.train_ratio, 
-                            random_state=opt.seed
-                        )
+                    train_idx, val_idx, holdout_idx = self._split(len(frames))
 
-                    self.train_val_indexer = {
+                    self.tvh_indexer = {
                         "train_idx": train_idx,
-                        "val_idx": val_idx
+                        "val_idx": val_idx,
+                        "holdout_idx": holdout_idx,
                     }
                 
-                    frames = apply_sparse(opt, [frames[i] for i in self.train_val_indexer['train_idx']])
+                    frames = apply_sparse(opt, [frames[i] for i in self.tvh_indexer['train_idx']])
                 elif type == 'val':
-                    frames = [frames[i] for i in self.train_val_indexer['val_idx']]
+                    frames = [frames[i] for i in self.tvh_indexer['val_idx']]
+                elif type == 'holdout':
+                    frames = [frames[i] for i in self.tvh_indexer['holdout_idx']]
                 # else 'all' or 'trainval' : use all frames
             
             # finally load images
@@ -254,6 +245,22 @@ class NeRFDataset:
                 self.error_map = self.error_map.to(self.device)
 
         self._load_intrinsics(transform, downscale)
+
+    def _split(self, n, random_state=42):
+        # count sizes
+        maybe_ratio = lambda x: int(x) if x > 1.0 else int(x * n)
+        train_size = maybe_ratio(self.opt.train_ratio)
+        val_size = maybe_ratio(self.opt.eval_ratio)
+        holdout_size = maybe_ratio(self.opt.holdout_ratio)
+
+        # generate indices
+        np.random.seed(random_state)
+        all_ids = np.random.permutation(n)
+        train_ids = all_ids[:train_size]
+        val_ids = all_ids[train_size:train_size + val_size]
+        holdout_ids = all_ids[train_size + val_size:train_size + val_size + holdout_size]
+        return train_ids, val_ids, holdout_ids
+    
 
     def _set_mode(self):
         # auto-detect transforms.json and split mode.
@@ -480,13 +487,13 @@ class NeRFDataset:
 
         return results
 
-    def append(self, holdout_dataset, ids):
-        self.poses = torch.cat([self.poses, holdout_dataset.poses[ids]])
-        self.images = torch.cat([self.images, holdout_dataset.images[ids]])
+    def append(self, other, ids):
+        self.poses = torch.cat([self.poses, other.poses[ids]])
+        self.images = torch.cat([self.images, other.images[ids]])
         if self.use_semantic:
-            self.semantic_images = torch.cat([self.semantic_images, holdout_dataset.semantic_images[ids]])
+            self.semantic_images = torch.cat([self.semantic_images, other.semantic_images[ids]])
         if self.error_map:
-            self.error_map = torch.cat([self.error_map, holdout_dataset.error_map[ids]])
+            self.error_map = torch.cat([self.error_map, other.error_map[ids]])
         
     def drop(self, ids):
         ids_keep = torch.ones(len(self), dtype=bool)

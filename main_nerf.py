@@ -28,6 +28,7 @@ if __name__ == '__main__':
     
     parser.add_argument('--eval_ratio', type=float, default=0.2)
     parser.add_argument('--train_ratio', type=float, default=None)
+    parser.add_argument('--holdout_ratio', type=float, default=0.0)
     parser.add_argument('--total_num_classes', type=int, default=101) # from replica dataset
     parser.add_argument('--metric_to_monitor', type=str, default="lpips") # from replica dataset
 
@@ -47,6 +48,8 @@ if __name__ == '__main__':
     parser.add_argument('--patch_size', type=int, default=1, help="[experimental] render patches in training, so as to apply LPIPS loss. 1 means disabled, use [64, 32, 16] to enable")
     parser.add_argument('--lambd', type=float, default=1.0, help="coeff for losses")
     parser.add_argument('--save_interval', type=int, default=10, help="how often to save")
+    parser.add_argument('--use_loss_as_metric', action='store_true', help="")
+    
 
     ### active learning
     parser.add_argument('--active_learning_interval', type=int, default=50, help="how often to apply active learning")
@@ -139,6 +142,7 @@ if __name__ == '__main__':
     # wandb
     parser.add_argument('--group', type=str)
     parser.add_argument('--resume', action="store_true")
+    parser.add_argument('--no_wandb', action="store_true")
     parser.add_argument('--wandbdir', type=str, default="/mnt/hdd8/skorokhodov_vs/wandb_logs")
 
     opt = parser.parse_args()
@@ -159,7 +163,7 @@ if __name__ == '__main__':
         raise RuntimeError("'num_semantic_classes' must be known if test")
     
     if opt.train_ratio is None:
-        opt.train_ratio = 1.0 - opt.eval_ratio
+        opt.train_ratio = 1.0 - opt.eval_ratio - opt.holdout_ratio
 
     seed_everything(opt.seed)
 
@@ -261,6 +265,7 @@ if __name__ == '__main__':
             eval_interval=opt.eval_interval,
             semantic_remap=nerf_dataset.semantic_remap,
             metric_to_monitor=opt.metric_to_monitor, 
+            use_loss_as_metric=opt.use_loss_as_metric
         )
 
         if opt.gui:
@@ -271,24 +276,32 @@ if __name__ == '__main__':
             valid_dataset = NeRFDataset(
                 opt, device=device, type='val', downscale=1, 
                 semantic_remap=nerf_dataset.semantic_remap,
-                train_val_indexer=nerf_dataset.train_val_indexer
+                tvh_indexer=nerf_dataset.tvh_indexer
             )
-            valid_loader = valid_dataset.dataloader()
+
+            if np.allclose(opt.holdout_ratio, 0.0):
+                holdout_dataset = None
+            else:    
+                holdout_dataset = NeRFDataset(
+                    opt, device=device, type='holdout', downscale=1, 
+                    semantic_remap=nerf_dataset.semantic_remap,
+                    tvh_indexer=nerf_dataset.tvh_indexer
+                )
 
             print(f"[INFO] MAX_EPOCH: {opt.epochs}, ITERS: {iters}")
-
             print(f"[INFO] RESUME: {opt.resume}")
-            wandb.init(
-                project="ngp_with_semantic_nerf",
-                group=opt.group,
-                name=f"semantic_ngp: {os.path.basename(opt.workspace)}",
-                config={**vars(opt), "mode": "semantic_ngp"},
-                tags=["semantic_ngp"],
-                dir=opt.wandbdir,
-                resume=opt.resume,
-            )
+            if not opt.no_wandb:
+                wandb.init(
+                    project="ngp_with_semantic_nerf",
+                    group=opt.group,
+                    name=f"semantic_ngp: {os.path.basename(opt.workspace)}",
+                    config={**vars(opt), "mode": "semantic_ngp"},
+                    tags=["semantic_ngp"],
+                    dir=opt.wandbdir,
+                    resume=opt.resume,
+                )
 
-            trainer.train(train_loader, valid_loader, opt.epochs)
+            trainer.train(nerf_dataset, valid_dataset, opt.epochs, holdout_dataset)
             # trainer.evaluate(valid_loader)
 
             # also test
@@ -305,5 +318,6 @@ if __name__ == '__main__':
                 opt.path_to_save_tm = os.path.join(opt.workspace, "time_measurements.json")
             
             tm.save(opt.path_to_save_tm)
-            wandb.run.summary["t_mean_render"] = tm.mean('render')
-            wandb.finish()
+            if not opt.no_wandb:
+                wandb.run.summary["t_mean_render"] = tm.mean('render')
+                wandb.finish()
