@@ -137,6 +137,33 @@ class NeRFNetwork(NeRFRenderer):
                 out_dim = self.hidden_dim_uncertainty
             uncertainty_net.append(nn.Linear(in_dim, out_dim, bias=False))
         self.uncertainty_net = nn.ModuleList(uncertainty_net)
+
+    @staticmethod
+    def semantic_predict(mu, sigma, Ngen=1000):
+        '''
+        we suppose that logits ~ Normal(mu, sigma^2)
+
+        ---
+        Arguments
+
+        mu: [B, ???, n]
+            - mean of logits
+
+        sigma: [B, ???, n]
+            - sigma of logits
+        
+        Ngen: int
+            - how many vectors to generate
+        '''
+
+        init_shape = mu.shape
+        mu = mu.view(init_shape[0], -1, init_shape[-1])
+        sigma = sigma.view(init_shape[0], -1, init_shape[-1])
+        B, N, n = mu.shape
+        epsilons = torch.randn(Ngen, B, N, n, dtype=mu.dtype, device=mu.device)
+        logits = mu + sigma * epsilons
+        probs = F.softmax(logits, dim=-1).mean(dim=0).view(init_shape)
+        return probs
         
 
     def forward(self, x, d):
