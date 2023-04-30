@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import torch.nn.functional as F
 
 class SemanticRemap:
     def __init__(self, remap=None):
