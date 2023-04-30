@@ -63,12 +63,18 @@ def srgb_to_linear(x):
     return torch.where(x < 0.04045, x / 12.92, ((x + 0.055) / 1.055) ** 2.4)
 
 class DirichletSemanticLoss(nn.Module):
+    '''
+    Implementation of dirichlet loss from paper
+    https://arxiv.org/pdf/1806.01768.pdf
+    '''
     def __init__(self):
         super().__init__()
 
     def forward(self, pred_parameters, gt_semantic):
         '''
-        pred_parameters, gt: [B, N, SC] <---> alphas
+        pred_parameters: [B, N, SC] <---> alphas
+        gt_semantic: [B, N]
+        ---
         e = alpha - 1
         S = sum(alphas)
         b = (alpha - 1) / S
@@ -504,30 +510,50 @@ def choose_new_k(model, holdout_dataset, k):
 
 
 class EarlyStop:
-    def __init__(self, alpha=1e-3, last=3):
+    def __init__(self, alpha=1e-3, relative=True, last=3, occ=2):
         '''
         Do one need to do early stopping
 
         ---
         arguments
         alpha: float
-            - if relative effect if smaller than alpha, than stop
+            - if effect if smaller than alpha, than stop
+        relative: bool
+            - relative effect of absolute effect
         last: int
             - how many last observation to consider
         bigger_is_better: bool
             - Bigger metric => better result
+        occ: int
+            - how many occurences in a row take into account
         '''
         self.alpha = alpha
         self.last = last
         self.metrics = []
+        self.occ = occ
+        self.relative = relative
+        self.curr_occ = 0
+
+    def _update_occ(self, new_res):
+        last_mean = np.mean(self.metrics[-self.last:])
+        denom = (np.abs(last_mean) + 1e-9) if self.relative else 1.0
+        if np.abs(new_res - last_mean) / denom < self.alpha:
+            self.curr_occ += 1
+        else:
+            self.curr_occ = 0
 
     def __call__(self, new_res):
-        if len(self.metrics) > 0:
-            last_mean = np.mean(self.metrics[-self.last:])
-            if np.abs(new_res - last_mean) / (np.abs(last_mean) + 1e-9) < self.alpha:
-                return True
-        self.metrics.append(new_res)
-        return False
+        if len(self.metrics) == 0:
+            self.metrics.append(new_res)
+            return False
+        
+        self._update_occ(new_res)
+        
+        if self.curr_occ >= self.occ:
+            return True
+        else:
+            self.metrics.append(new_res)
+            return False
 
 
 class Trainer(object):
@@ -639,7 +665,7 @@ class Trainer(object):
             self.ema = None
 
         if early_stop is None:
-            early_stop = EarlyStop(1e-3, 3)
+            early_stop = EarlyStop(alpha=5e-3, relative=False)
         self.early_stop = early_stop
 
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.fp16)
@@ -977,10 +1003,11 @@ class Trainer(object):
 
     ### ------------------------------
 
-    def train(self, train_dataset, valid_dataset, max_epochs, holdout_dataset=None):
+    def train(self, train_dataset, valid_dataset, test_dataset, max_epochs, holdout_dataset=None):
+        valid_loader = valid_dataset.dataloader()
+        test_loader = test_dataset.dataloader()
         for epoch in range(self.epoch + 1, max_epochs + 1):
             train_loader = train_dataset.dataloader()
-            valid_loader = valid_dataset.dataloader()
             # mark untrained region (i.e., not covered by any camera from the training dataset)
             if self.model.cuda_ray:
                 self.model.mark_untrained_grid(train_loader._data.poses, train_loader._data.intrinsics)
@@ -994,6 +1021,9 @@ class Trainer(object):
             if self.workspace is not None and self.local_rank == 0 and self.epoch % self.save_interval == 0:
                 self.save_checkpoint(full=True, best=False)
 
+            if self.epoch % self.opt.video_interval == 0:
+                self.test(test_loader, write_video=True)
+
             if self.epoch % self.eval_interval == 0:
                 self.evaluate_one_epoch(valid_loader)
                 self.save_checkpoint(full=False, best=True)
@@ -1002,6 +1032,7 @@ class Trainer(object):
                 if not self.use_loss_as_metric and self.early_stop(self.stats["results"]["metrics"][-1][self.metric_to_monitor]):
                     print(f"[INFO] Early stopping at {epoch}")
                     break
+
             
             if self.epoch % self.active_learning_interval == 0:
                 print(f"[INFO] active learning at {epoch}")

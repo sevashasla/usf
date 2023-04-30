@@ -6,7 +6,7 @@ import json
 import yaml
 import argparse
 
-class NgpRunner:
+class NeRFRunner:
     def __init__(self):
         pass
 
@@ -52,9 +52,13 @@ class NgpRunner:
         result = result + " ".join(map(lambda pair: f"--{pair[0]}={pair[1]}", other_params)) + " "
         result = result + " ".join(map(lambda k: f"--{k}", true_bool_params)) + " "
         return result
+    
+    @staticmethod
+    def already_exists(config):
+        return os.path.exists(config["workspace"])
 
 
-class SemanticNgpRunner(NgpRunner):
+class SemanticNgpRunner(NeRFRunner):
     default_params = {
         "fp16": True,
         "scale": 0.5, 
@@ -77,7 +81,7 @@ class SemanticNgpRunner(NgpRunner):
         self.launch = self.prepare_launch()
 
 
-class TorchNgpRunner(NgpRunner):
+class TorchNgpRunner(NeRFRunner):
     default_params = {
         "fp16": True,
         "scale": 0.5, 
@@ -100,7 +104,7 @@ class TorchNgpRunner(NgpRunner):
         self.launch = self.prepare_launch()
 
 
-class SemanticNeRFRunner(NgpRunner):
+class SemanticNeRFRunner(NeRFRunner):
     default_params = {
         "experiment": {
             "convention": "opencv",
@@ -173,6 +177,10 @@ class SemanticNeRFRunner(NgpRunner):
         config["logging"].setdefault("step_save_ckpt", config["train"]["N_iters"] // 5)
         config["logging"].setdefault("step_val", config["train"]["N_iters"] // 5)
         config["logging"].setdefault("step_vis_train", config["train"]["N_iters"])
+    
+    @staticmethod
+    def already_exists(config):
+        return os.path.exists(config["experiment"]["save_dir"])
         
     def prepare_launch(self):
         os.makedirs("tmp", exist_ok=True)
@@ -233,7 +241,7 @@ def main():
         runners = []
         for i, torch_ngp_exp_config in enumerate(exp.get("torch_ngp", [])):
             config = deepcopy(torch_ngp_exp_config)
-            if config is None or not config.pop("do_run", True):
+            if config is None:
                 continue
             TorchNgpRunner.prepare_config(
                 config, 
@@ -241,11 +249,13 @@ def main():
                 place=place, sequence=sequence,
                 w=w, h=h, group=group, i=i,
             )
+            if TorchNgpRunner.already_exists(config) and not config.pop("do_run", False): # also delete do_run!
+                continue
             runners.append(TorchNgpRunner(config))
 
         for i, semantic_ngp_exp_config in enumerate(exp.get("semantic_ngp", [])):
             config = deepcopy(semantic_ngp_exp_config)
-            if config is None or not config.pop("do_run", True):
+            if config is None:
                 continue
             SemanticNgpRunner.prepare_config(
                 config, 
@@ -254,11 +264,13 @@ def main():
                 w=w, h=h, scene_file=scene_file,
                 group=group, i=i,
             )
+            if SemanticNgpRunner.already_exists(config) and not config.pop("do_run", False): # also delete do_run!
+                continue
             runners.append(SemanticNgpRunner(config))
 
         for i, semantic_nerf_exp_config in enumerate(exp.get("semantic_nerf", [])):
             config = deepcopy(semantic_nerf_exp_config)
-            if config is None or not config.pop("do_run", True):
+            if config is None:
                 continue
             SemanticNeRFRunner.prepare_config(
                 config, 
@@ -268,6 +280,8 @@ def main():
                 w=w, h=h, group=group, scene_file=scene_file,
                 i=i,
             )
+            if SemanticNeRFRunner.already_exists(config) and not config.pop("do_run", False): # also delete do_run!
+                continue
             runners.append(SemanticNeRFRunner(config))
 
         for r in runners:

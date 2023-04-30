@@ -35,6 +35,8 @@ if __name__ == '__main__':
     ### training options
     # parser.add_argument('--iters', type=int, default=30000, help="training iters")
     parser.add_argument('--epochs', type=int, default=20, help="training epochs")
+    parser.add_argument('--video_interval', type=int, default=None, help="how often to make & save video")
+    parser.add_argument('--video_mode', type=int, default=1, help="mode of how to choose poses for video making")
     parser.add_argument('--warmup_epochs', type=int, default=20, help="number of warmup epochs")
     parser.add_argument('--lr', type=float, default=1e-2, help="initial learning rate")
     parser.add_argument('--ckpt', type=str, default='latest')
@@ -164,6 +166,9 @@ if __name__ == '__main__':
     
     if opt.train_ratio is None:
         opt.train_ratio = 1.0 - opt.eval_ratio - opt.holdout_ratio
+
+    if opt.video_interval is None:
+        opt.video_interval = opt.epochs
 
     seed_everything(opt.seed)
 
@@ -301,11 +306,11 @@ if __name__ == '__main__':
                     resume=opt.resume,
                 )
 
-            trainer.train(nerf_dataset, valid_dataset, opt.epochs, holdout_dataset)
-            # trainer.evaluate(valid_loader)
+            test_dataset = NeRFDataset(opt, device=device, type='test', semantic_remap=nerf_dataset.semantic_remap)
+            test_loader = test_dataset.dataloader()
+            trainer.train(nerf_dataset, valid_dataset, test_dataset, opt.epochs, holdout_dataset)
 
             # also test
-            test_loader = NeRFDataset(opt, device=device, type='test', semantic_remap=nerf_dataset.semantic_remap).dataloader()
             
             if test_loader.has_gt:
                 trainer.evaluate(test_loader) # blender has gt, so evaluate it.

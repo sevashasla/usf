@@ -152,7 +152,10 @@ class NeRFDataset:
         
         # for colmap, manually interpolate a test set.
         if self.mode == 'colmap' and type == 'test':
-            colmap_test = self._create_colmap_test(frames, n_test)
+            if self.opt.video_mode == 1:
+                colmap_test = self._create_colmap_test(frames, n_test)
+            elif self.opt.video_mode == 2:
+                colmap_test = self._create_colmap_test2(frames, n_test)
             self.poses = colmap_test['poses']
             self.images = colmap_test['images']
             self.semantic_images = colmap_test['semantic_images']
