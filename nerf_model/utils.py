@@ -772,6 +772,7 @@ class Trainer(object):
             pred_smntc = outputs['semantic_image']
             pred_uncert = outputs['uncertainty_image']
             pred_depth = outputs['depth']
+            pred_uncert_smntc = outputs['semantic_uncertainty_image']
 
             # [debug] uncomment to plot the images used in train_step
             #torch_vis_2d(pred_rgb[0])
@@ -811,6 +812,7 @@ class Trainer(object):
     
         pred_rgb = outputs['image']
         pred_smntc = outputs['semantic_image']
+        pred_uncert_smntc = outputs['semantic_uncertainty_image']
         pred_uncert = outputs['uncertainty_image']
         pred_depth = outputs['depth']
         pred_alpha = outputs['alphas']
@@ -818,11 +820,18 @@ class Trainer(object):
         # MSE loss
         loss = self.criterion(pred_rgb, gt_rgb).mean(-1) # [B, N, 3] --> [B, N]
 
+        # # CrossEntropyLoss
+        # if self.use_semantic:
+        #     loss_smntc = self.criterion_semantic(pred_smntc.view(B * N, SC), gt_smntc.view(B * N)) # scalar
+        # else:
+        #     loss_smntc = torch.tensor(0.0)
+
         # CrossEntropyLoss
         if self.use_semantic:
-            loss_ce = self.criterion_semantic(pred_smntc.view(B * N, SC), gt_smntc.view(B * N)) # scalar
+            pred_smntc_probs = self.model.semantic_postprocess(pred_smntc, pred_uncert_smntc)
+            loss_smntc = self.criterion_semantic(pred_smntc_probs.view(B * N, SC), gt_smntc.view(B * N)) # scalar
         else:
-            loss_ce = torch.tensor(0.0)
+            loss_smntc = torch.tensor(0.0)
 
         # RGBUncertaintyLoss
         # TODO
@@ -872,13 +881,13 @@ class Trainer(object):
 
         loss = loss.mean()
         # they use weighted loss, but set lambda_ce = 1 it's ok
-        losses_to_log = {"train/loss": loss.item(), "train/loss_ce": loss_ce.item(), "train/loss_uncert": loss_uncert.item()}
+        losses_to_log = {"train/loss": loss.item(), "train/loss_ce": loss_smntc.item(), "train/loss_uncert": loss_uncert.item()}
 
         # TODO: Maybe delete loss of MSE?
-        loss = (1 - self.omega) * loss + self.lambd * loss_ce + self.omega * loss_uncert
+        loss = (1 - self.omega) * loss + self.lambd * loss_smntc + self.omega * loss_uncert
         if not self.opt.no_wandb:
             wandb.log({**losses_to_log, "train/sum_loss": loss.item()})
-        # loss = self.lambd * loss_ce + self.omega * loss_uncert
+        # loss = self.lambd * loss_smntc + self.omega * loss_uncert
 
         # extra loss
         # pred_weights_sum = outputs['weights_sum'] + 1e-8
@@ -892,6 +901,7 @@ class Trainer(object):
             "gt_smntc": gt_smntc, 
             "pred_depth": pred_depth, 
             "pred_uncert": pred_uncert, 
+            "pred_uncert_smnth": pred_uncert_smntc, 
             "loss": loss
         }
 
@@ -923,26 +933,32 @@ class Trainer(object):
         if self.use_semantic:
             gt_smntc = semantic_images
             pred_smntc = outputs['semantic_image'].reshape(B, H, W, SC)
+            pred_uncert_smntc = outputs['semantic_uncertainty_image'].reshape(B, H, W, 1)
+            pred_smntc_probs = self.model.semantic_postprocess(pred_smntc, pred_uncert_smntc)
         else:
             gt_smntc = None
             pred_smntc = None
+            pred_uncert_smntc = None
+            pred_smntc_probs = None
         pred_uncert = outputs['uncertainty_image'].reshape(B, H, W, 1)
         pred_depth = outputs['depth'].reshape(B, H, W)
         pred_alpha = outputs['alphas'].reshape(B, H, W, -1)
 
         loss = self.criterion(pred_rgb, gt_rgb).mean()
         if self.use_semantic:
-            loss_ce = self.criterion_semantic(pred_smntc.view(B * H * W, SC), gt_smntc.view(B * H * W))
+            loss_smntc = self.criterion_semantic(pred_smntc.view(B * H * W, SC), gt_smntc.view(B * H * W))
         else:
-            loss_ce = torch.tensor(0.0)
+            loss_smntc = torch.tensor(0.0)
         
         loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
-        loss = (1 - self.omega) * loss + self.lambd * loss_ce + self.omega * loss_uncert
+        loss = (1 - self.omega) * loss + self.lambd * loss_smntc + self.omega * loss_uncert
 
         return {
             "pred_rgb": pred_rgb, 
             "gt_rgb": gt_rgb, 
             "pred_smntc": pred_smntc, 
+            "pred_uncert_smntc": pred_uncert_smntc, 
+            "pred_smntc_probs": pred_smntc_probs, 
             "gt_smntc": gt_smntc, 
             "pred_depth": pred_depth, 
             "pred_uncert": pred_uncert, 
@@ -965,15 +981,21 @@ class Trainer(object):
 
         pred_rgb = outputs['image'].reshape(-1, H, W, 3)
         if self.use_semantic:
+            pred_uncert_smntc = outputs['semantic_uncertainty_image'].reshape(-1, H, W, 1)
             pred_smntc = outputs['semantic_image'].reshape(-1, H, W, SC)
+            pred_smntc_probs = self.model.semantic_postprocess(pred_smntc, pred_uncert_smntc)
         else:
             pred_smntc = None
+            pred_uncert_smntc = None
+            pred_smntc_probs = None
         pred_uncert = outputs['uncertainty_image'].reshape(-1, H, W, 1)
         pred_depth = outputs['depth'].reshape(-1, H, W)
 
         return {
             "pred_rgb": pred_rgb, 
             "pred_smntc": pred_smntc, 
+            "pred_uncert_smntc": pred_uncert_smntc, 
+            "pred_smntc_probs": pred_smntc_probs, 
             "pred_uncert": pred_uncert,
             "pred_depth": pred_depth,
         }
@@ -1033,7 +1055,6 @@ class Trainer(object):
                     print(f"[INFO] Early stopping at {epoch}")
                     break
 
-            
             if self.epoch % self.active_learning_interval == 0:
                 print(f"[INFO] active learning at {epoch}")
                 self.active_learning(train_dataset, holdout_dataset)
@@ -1084,6 +1105,8 @@ class Trainer(object):
                     full_pred_test = self.test_step(data)
                     preds = full_pred_test['pred_rgb']
                     preds_smntc = full_pred_test['pred_smntc']
+                    preds_uncert_semantic = full_pred_test['pred_uncert_semantic']
+                    preds_smntc_probs = full_pred_test['pred_smntc_probs']
                     preds_uncert = full_pred_test['pred_uncert']
                     preds_depth = full_pred_test['pred_depth']
                     
@@ -1097,19 +1120,9 @@ class Trainer(object):
                 pred_uncert = preds_uncert[0].detach().cpu().numpy()
 
                 if self.use_semantic:
-                    pred_smntc_logits = preds_smntc[0].detach().cpu()
-                    pred_smntc = pred_smntc_logits.numpy().argmax(axis=-1).astype(np.uint8)
-
-
-                    # maybe it will be ok to watch at semantic unsert like this?
-                    predicted_probs = F.softmax(pred_smntc_logits, dim=-1).numpy()
-                    SC = predicted_probs.shape[-1] # semanic classes
-                    semantic_unsert = np.zeros_like(predicted_probs)
-                    # linear function
-                    semantic_unsert[predicted_probs < 1 / SC] = SC * semantic_unsert[predicted_probs < 1 / SC]
-                    semantic_unsert[predicted_probs >= 1 / SC] = SC / (SC - 1) * (1.0 - semantic_unsert[predicted_probs >= 1 / SC])
-                    semantic_unsert = semantic_unsert.sum(axis=-1)
-                
+                    pred_smntc = preds_smntc_probs[0].detach().cpu().numpy().argmax(axis=-1).astype(np.uint8)
+                    semantic_uncert = preds_uncert_semantic[0].detach().cpu().numpy()
+                    
                 pred_depth = preds_depth[0].detach().cpu().numpy()
                 pred_depth = (pred_depth * 255).astype(np.uint8)
 
@@ -1120,14 +1133,14 @@ class Trainer(object):
                     all_preds_uncert.append(pred_uncert)
                     if self.use_semantic:
                         all_preds_smntc.append(pred_smntc)
-                        all_preds_semantic_uncert.append(semantic_unsert)
+                        all_preds_semantic_uncert.append(semantic_uncert)
                     all_preds_depth.append(pred_depth)
                 else:
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_rgb.png'), cv2.cvtColor(pred, cv2.COLOR_RGB2BGR))
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_uncert.png'), linear_transform(pred_uncert))
                     if self.use_semantic:
                         cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_smntc.png'), pred_smntc)
-                        cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_semantic_uncert.png'), linear_transform(semantic_unsert))
+                        cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_semantic_uncert.png'), linear_transform(semantic_uncert))
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_depth.png'), pred_depth)
 
                 pbar.update(loader.batch_size)
@@ -1315,6 +1328,8 @@ class Trainer(object):
                 preds = full_pred_train["pred_rgb"]
                 truths = full_pred_train["gt_rgb"]
                 preds_smntc = full_pred_train["pred_smntc"]
+                preds_uncert_smntc = full_pred_train["pred_uncert_smntc"]
+                preds_smntc_probs = full_pred_train["pred_smntc_probs"]
                 gt_smntc = full_pred_train["gt_smntc"]
                 preds_uncert = full_pred_train["pred_uncert"]
                 pred_depth = full_pred_train["pred_depth"]
@@ -1347,7 +1362,7 @@ class Trainer(object):
                     for metric in self.metrics:
                         metric.update(preds, truths)
                     for smetric in self.segmentation_metrics:
-                        smetric.update(preds_smntc, gt_smntc)
+                        smetric.update(preds_smntc_probs, gt_smntc) # IMPORTANT!
                     for dmetric in self.depth_metrics:
                         dmetric.update(pred_depth, ...)
 
@@ -1418,6 +1433,8 @@ class Trainer(object):
                     preds = full_pred_eval["pred_rgb"]
                     truths = full_pred_eval["gt_rgb"]
                     preds_smntc = full_pred_eval["pred_smntc"]
+                    preds_uncert_smntc = full_pred_eval["pred_uncert_smntc"]
+                    preds_smntc_probs = full_pred_eval["pred_smntc_probs"]
                     gt_smntc = full_pred_eval["gt_smntc"]
                     preds_uncert = full_pred_eval["pred_uncert"]
                     preds_depth = full_pred_eval["pred_depth"]
@@ -1433,14 +1450,23 @@ class Trainer(object):
                     dist.all_gather(preds_list, preds)
                     preds = torch.cat(preds_list, dim=0)
 
-                    preds_smntc_list = [torch.zeros_like(preds_smntc).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
-                    dist.all_gather(preds_smntc_list, preds_smntc)
-                    preds_smntc = torch.cat(preds_smntc_list, dim=0)
+
+                    preds_uncert_list = [torch.zeros_like(preds_uncert).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
+                    dist.all_gather(preds_uncert_list, preds_uncert)
+                    preds_uncert = torch.cat(preds_uncert_list, dim=0)
 
                     if self.use_semantic:
-                        preds_uncert_list = [torch.zeros_like(preds_uncert).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
-                        dist.all_gather(preds_uncert_list, preds_uncert)
-                        preds_uncert = torch.cat(preds_uncert_list, dim=0)
+                        preds_smntc_list = [torch.zeros_like(preds_smntc).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
+                        dist.all_gather(preds_smntc_list, preds_smntc)
+                        preds_smntc = torch.cat(preds_smntc_list, dim=0)
+
+                        preds_smntc_probs_list = [torch.zeros_like(preds_smntc_probs).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
+                        dist.all_gather(preds_smntc_probs_list, preds_smntc)
+                        preds_smntc = torch.cat(preds_smntc_probs_list, dim=0)
+
+                        preds_uncert_smntc = [torch.zeros_like(preds_uncert_smntc).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
+                        dist.all_gather(preds_uncert_smntc, preds_smntc)
+                        preds_smntc = torch.cat(preds_uncert_smntc, dim=0)
 
                         gt_smntc_list = [torch.zeros_like(gt_smntc).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
                         dist.all_gather(gt_smntc_list, gt_smntc)
@@ -1462,7 +1488,7 @@ class Trainer(object):
                     for metric in self.metrics:
                         metric.update(preds, truths)
                     for smetric in self.segmentation_metrics:
-                        smetric.update(preds_smntc, gt_smntc)
+                        smetric.update(preds_smntc_probs, gt_smntc)
                     for dmetric in self.depth_metrics:
                         dmetric.update(preds_depth, ...)
 
