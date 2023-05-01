@@ -113,6 +113,10 @@ class NeRFRenderer(nn.Module):
     def semantic_pred(self, x, mask=None, geo_feat=None, **kwargs):
         raise NotImplementedError()
 
+    @staticmethod
+    def semantic_postprocess_prob(mu, sigma, Ngen=1000):
+        raise NotImplementedError()
+
     def uncertainty_pred(self, x, mask=None, geo_feat=None, **kwargs):
         raise NotImplementedError()
 

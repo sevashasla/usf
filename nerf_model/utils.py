@@ -759,27 +759,6 @@ class Trainer(object):
 
         rays_o = data['rays_o'] # [B, N, 3]
         rays_d = data['rays_d'] # [B, N, 3]
-
-        # if there is no gt image, we train with CLIP loss.
-        if 'images' not in data:
-
-            B, N = rays_o.shape[:2]
-            H, W = data['H'], data['W']
-
-            # currently fix white bg, MUST force all rays!
-            outputs = self.model.render(rays_o, rays_d, staged=False, bg_color=None, perturb=True, force_all_rays=True, **vars(self.opt))
-            pred_rgb = outputs['image'].reshape(B, H, W, 3).permute(0, 3, 1, 2).contiguous()
-            pred_smntc = outputs['semantic_image']
-            pred_uncert = outputs['uncertainty_image']
-            pred_depth = outputs['depth']
-            pred_uncert_smntc = outputs['semantic_uncertainty_image']
-
-            # [debug] uncomment to plot the images used in train_step
-            #torch_vis_2d(pred_rgb[0])
-
-            loss = self.clip_loss(pred_rgb)
-            return pred_rgb, None, pred_smntc, None, pred_depth, loss
-
         images = data['images'] # [B, N, 3/4]
         if self.use_semantic:
             semantic_images = data['semantic_images']
@@ -828,9 +807,11 @@ class Trainer(object):
 
         # CrossEntropyLoss
         if self.use_semantic:
-            pred_smntc_probs = self.model.semantic_postprocess(pred_smntc, pred_uncert_smntc)
-            loss_smntc = self.criterion_semantic(pred_smntc_probs.view(B * N, SC), gt_smntc.view(B * N)) # scalar
+            pred_smntc_probs = self.model.semantic_postprocess_prob(pred_smntc, pred_uncert_smntc)
+            pred_smntc_log_probs = torch.log(pred_smntc_probs)
+            loss_smntc = self.criterion_semantic(pred_smntc_log_probs.view(B * N, SC), gt_smntc.view(B * N)) # scalar
         else:
+            pred_smntc_probs = None
             loss_smntc = torch.tensor(0.0)
 
         # RGBUncertaintyLoss
@@ -901,7 +882,8 @@ class Trainer(object):
             "gt_smntc": gt_smntc, 
             "pred_depth": pred_depth, 
             "pred_uncert": pred_uncert, 
-            "pred_uncert_smnth": pred_uncert_smntc, 
+            "pred_uncert_smntc": pred_uncert_smntc, 
+            "pred_smntc_probs": pred_smntc_probs, 
             "loss": loss
         }
 
@@ -934,7 +916,7 @@ class Trainer(object):
             gt_smntc = semantic_images
             pred_smntc = outputs['semantic_image'].reshape(B, H, W, SC)
             pred_uncert_smntc = outputs['semantic_uncertainty_image'].reshape(B, H, W, 1)
-            pred_smntc_probs = self.model.semantic_postprocess(pred_smntc, pred_uncert_smntc)
+            pred_smntc_probs = self.model.semantic_postprocess_prob(pred_smntc, pred_uncert_smntc)
         else:
             gt_smntc = None
             pred_smntc = None
@@ -946,7 +928,8 @@ class Trainer(object):
 
         loss = self.criterion(pred_rgb, gt_rgb).mean()
         if self.use_semantic:
-            loss_smntc = self.criterion_semantic(pred_smntc.view(B * H * W, SC), gt_smntc.view(B * H * W))
+            pred_smntc_log_probs = torch.log(pred_smntc_probs)
+            loss_smntc = self.criterion_semantic(pred_smntc_log_probs.view(B * H * W, SC), gt_smntc.view(B * H * W))
         else:
             loss_smntc = torch.tensor(0.0)
         
@@ -983,7 +966,7 @@ class Trainer(object):
         if self.use_semantic:
             pred_uncert_smntc = outputs['semantic_uncertainty_image'].reshape(-1, H, W, 1)
             pred_smntc = outputs['semantic_image'].reshape(-1, H, W, SC)
-            pred_smntc_probs = self.model.semantic_postprocess(pred_smntc, pred_uncert_smntc)
+            pred_smntc_probs = self.model.semantic_postprocess_prob(pred_smntc, pred_uncert_smntc)
         else:
             pred_smntc = None
             pred_uncert_smntc = None
@@ -1105,7 +1088,7 @@ class Trainer(object):
                     full_pred_test = self.test_step(data)
                     preds = full_pred_test['pred_rgb']
                     preds_smntc = full_pred_test['pred_smntc']
-                    preds_uncert_semantic = full_pred_test['pred_uncert_semantic']
+                    preds_uncert_semantic = full_pred_test['pred_uncert_smntc']
                     preds_smntc_probs = full_pred_test['pred_smntc_probs']
                     preds_uncert = full_pred_test['pred_uncert']
                     preds_depth = full_pred_test['pred_depth']
@@ -1402,7 +1385,6 @@ class Trainer(object):
                 self.lr_scheduler.step()
 
         self.log(f"==> Finished Epoch {self.epoch}.")
-
 
     def evaluate_one_epoch(self, loader, name=None):
         self.log(f"++> Evaluate at epoch {self.epoch} ...")

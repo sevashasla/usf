@@ -135,10 +135,10 @@ class NeRFNetwork(NeRFRenderer):
         ---
         Arguments
 
-        mu: [B, ???, n]
+        mu: [B, ..., SC]
             - mean of logits
 
-        sigma: [B, ???, n]
+        sigma: [B, ...]
             - sigma of logits
         
         Ngen: int
@@ -147,11 +147,15 @@ class NeRFNetwork(NeRFRenderer):
 
         init_shape = mu.shape
         mu = mu.view(init_shape[0], -1, init_shape[-1])
-        sigma = sigma.view(init_shape[0], -1, init_shape[-1])
-        B, N, n = mu.shape
-        epsilons = torch.randn(Ngen, B, N, n, dtype=mu.dtype, device=mu.device)
-        logits = mu + sigma * epsilons
-        probs = F.softmax(logits, dim=-1).mean(dim=0).view(init_shape)
+        sigma = sigma.view(init_shape[0], -1, 1)
+        B, N, SC = mu.shape
+        probs = torch.zeros_like(mu)
+        # cycle to avoid OOM
+        for _ in range(Ngen):
+            epsilons = torch.randn(B, N, SC, dtype=mu.dtype, device=mu.device)
+            logits = mu + sigma * epsilons
+            probs = probs + F.softmax(logits, dim=-1)
+        probs = (probs / Ngen).view(init_shape)
         return probs
         
 

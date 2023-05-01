@@ -173,7 +173,8 @@ if __name__ == '__main__':
     seed_everything(opt.seed)
 
     criterion = torch.nn.MSELoss(reduction='none')
-    criterion_semantic = torch.nn.CrossEntropyLoss()
+    # criterion_semantic = torch.nn.CrossEntropyLoss()
+    criterion_semantic = torch.nn.NLLLoss()
     criterion_uncertainty = RGBUncertaintyLoss(opt.alpha_uncert)
     # criterion float partial(educticoeff inside RGBUncertaintyLoss')
     #criterion = torch.nn.HuberLoss(reduction='none', beta=0.1) # only available after torch 1.10 ?
