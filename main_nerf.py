@@ -56,6 +56,7 @@ if __name__ == '__main__':
     ### active learning
     parser.add_argument('--active_learning_interval', type=int, default=50, help="how often to apply active learning")
     parser.add_argument('--active_learning_num', type=int, default=4, help="how often to apply active learning")
+    parser.add_argument('--Ngen', type=int, default=10, help="How many samples to generate in semantic postprocess prob")
 
     ### network backbone options
     parser.add_argument('--fp16', action='store_true', help="use amp mixed precision training")
@@ -192,6 +193,7 @@ if __name__ == '__main__':
             bg_radius=opt.bg_radius,
             num_semantic_classes=opt.num_semantic_classes,
             beta_min=opt.beta_min,
+            Ngen=opt.Ngen,
         )
 
         metrics = [PSNRMeter(), LPIPSMeter(device=device), SSIMMeter(device=device)]
@@ -235,6 +237,7 @@ if __name__ == '__main__':
             bg_radius=opt.bg_radius,
             num_semantic_classes=num_semantic_classes,
             beta_min=opt.beta_min,
+            Ngen=opt.Ngen,
         )
 
         print(model)

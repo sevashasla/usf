@@ -1136,10 +1136,8 @@ class Trainer(object):
                 all_preds_semantic_uncert = np.stack(all_preds_semantic_uncert, axis=0)
             all_preds_depth = np.stack(all_preds_depth, axis=0)
             imageio.mimwrite(os.path.join(save_path, f'{name}_rgb.mp4'), all_preds, fps=10, quality=8, macro_block_size=1)
-            imageio.mimwrite(os.path.join(save_path, f'{name}_uncert.mp4'), linear_transform(all_preds_uncert), fps=10, quality=8, macro_block_size=1)
-            if self.use_semantic:
-                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), self.sem_colormap[all_preds_smntc], fps=10, quality=8, macro_block_size=1)
-                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), linear_transform(all_preds_semantic_uncert), fps=10, quality=8, macro_block_size=1)
+            # HARDCODE += 50, more pretty to watch!
+            imageio.mimwrite(os.path.join(save_path, f'{name}_uncert.mp4'), linear_transform(all_preds_uncert) + 50, fps=10, quality=8, macro_block_size=1)
             imageio.mimwrite(os.path.join(save_path, f'{name}_depth.mp4'), all_preds_depth, fps=10, quality=8, macro_block_size=1)
             to_log_videos = {
                 "video/rgb": wandb.Video(os.path.join(save_path, f'{name}_rgb.mp4'), format="mp4"),
@@ -1147,6 +1145,8 @@ class Trainer(object):
                 "video/depth": wandb.Video(os.path.join(save_path, f'{name}_depth.mp4'), format="mp4"),
             }
             if self.use_semantic:
+                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), self.sem_colormap[all_preds_smntc], fps=10, quality=8, macro_block_size=1)
+                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), linear_transform(all_preds_semantic_uncert) + 50, fps=10, quality=8, macro_block_size=1)
                 to_log_videos = {
                     **to_log_videos,
                     "video/semantic": wandb.Video(os.path.join(save_path, f'{name}_smntc.mp4'), format="mp4"),

@@ -67,3 +67,131 @@ experiments:
 
         lambd: 0.01
         omega: 0.3
+
+      -
+        name: "room_1_3"
+        
+        epochs: 1000
+        max_ray_batch: 4096
+        num_rays: 1024
+        num_steps: 512
+        
+        save_interval: 50
+        eval_interval: 50
+        active_learning_interval: 100
+        video_interval: 100
+
+        eval_ratio: 0.1
+        train_ratio: 0.05
+        holdout_ratio: 0.05
+        video_mode: 2
+
+        lambd: 0.01
+        omega: 0.3
+
+      -
+        name: "room_1_4"
+        
+        epochs: 1000
+        max_ray_batch: 4096
+        num_rays: 1024
+        num_steps: 512
+        
+        save_interval: 50
+        eval_interval: 50
+        active_learning_interval: 100
+        video_interval: 100
+
+        eval_ratio: 0.1
+        train_ratio: 0.05
+        holdout_ratio: 0.05
+        video_mode: 2
+
+        lambd: 0.01
+        omega: 0.3
+        lr: 0.001
+
+      -
+        name: "room_1_5_increase_Ngen"
+        
+        epochs: 1000
+        max_ray_batch: 4096
+        num_rays: 1024
+        num_steps: 512
+        
+        save_interval: 50
+        eval_interval: 50
+        active_learning_interval: 100
+        video_interval: 100
+
+        eval_ratio: 0.1
+        train_ratio: 0.05
+        holdout_ratio: 0.05
+        video_mode: 2
+
+        lambd: 0.01
+        omega: 0.3
+
+      -
+        name: "room_1_6_lambd"
+        
+        epochs: 1000
+        max_ray_batch: 4096
+        num_rays: 1024
+        num_steps: 512
+        
+        save_interval: 50
+        eval_interval: 50
+        active_learning_interval: 100
+        video_interval: 100
+
+        eval_ratio: 0.1
+        train_ratio: 0.05
+        holdout_ratio: 0.05
+        video_mode: 2
+
+        lambd: 0.1
+        omega: 0.3
+
+      -
+        name: "room_1_7_often_eval"
+        
+        epochs: 1000
+        max_ray_batch: 4096
+        num_rays: 1024
+        num_steps: 512
+        
+        save_interval: 50
+        eval_interval: 3
+        active_learning_interval: 100
+        video_interval: 100
+
+        eval_ratio: 0.1
+        train_ratio: 0.05
+        holdout_ratio: 0.05
+        video_mode: 2
+
+        lambd: 0.1
+        omega: 0.3
+
+      - 
+        name: "room_1_8_smaller_Ngen"
+        
+        epochs: 1000
+        max_ray_batch: 4096
+        num_rays: 1024
+        num_steps: 512
+        
+        save_interval: 50
+        eval_interval: 3
+        active_learning_interval: 100
+        video_interval: 100
+
+        eval_ratio: 0.1
+        train_ratio: 0.05
+        holdout_ratio: 0.05
+        video_mode: 2
+
+        lambd: 0.1
+        omega: 0.3
+        Ngen: 10

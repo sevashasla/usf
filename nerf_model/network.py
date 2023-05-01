@@ -26,12 +26,14 @@ class NeRFNetwork(NeRFRenderer):
                  # uncertainty
                  beta_min=0.01,
                  bound=1,
+                 Ngen=10, 
                  **kwargs,
                  ):
         super().__init__(bound, **kwargs)
 
         self.use_semantic = num_semantic_classes > 0
         self.num_semantic_classes = num_semantic_classes
+        self.Ngen = Ngen
 
         # sigma network
         self.num_layers = num_layers
@@ -127,8 +129,7 @@ class NeRFNetwork(NeRFRenderer):
         self.layer_semantic_uncertainty = nn.Linear(self.geo_feat_dim, 1)
         
 
-    @staticmethod
-    def semantic_postprocess_prob(mu, sigma, Ngen=1000):
+    def semantic_postprocess_prob(self, mu, sigma):
         '''
         we suppose that logits ~ Normal(mu, sigma^2)
 
@@ -151,11 +152,11 @@ class NeRFNetwork(NeRFRenderer):
         B, N, SC = mu.shape
         probs = torch.zeros_like(mu)
         # cycle to avoid OOM
-        for _ in range(Ngen):
+        for _ in range(self.Ngen):
             epsilons = torch.randn(B, N, SC, dtype=mu.dtype, device=mu.device)
             logits = mu + sigma * epsilons
             probs = probs + F.softmax(logits, dim=-1)
-        probs = (probs / Ngen).view(init_shape)
+        probs = (probs / self.Ngen).view(init_shape)
         return probs
         
 
