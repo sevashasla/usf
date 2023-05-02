@@ -808,7 +808,7 @@ class Trainer(object):
         # CrossEntropyLoss
         if self.use_semantic:
             pred_smntc_probs = self.model.semantic_postprocess_prob(pred_smntc, pred_uncert_smntc)
-            pred_smntc_log_probs = torch.log(pred_smntc_probs)
+            pred_smntc_log_probs = torch.log(pred_smntc_probs + 1e-9)
             loss_smntc = self.criterion_semantic(pred_smntc_log_probs.view(B * N, SC), gt_smntc.view(B * N)) # scalar
         else:
             pred_smntc_probs = None
@@ -928,7 +928,7 @@ class Trainer(object):
 
         loss = self.criterion(pred_rgb, gt_rgb).mean()
         if self.use_semantic:
-            pred_smntc_log_probs = torch.log(pred_smntc_probs)
+            pred_smntc_log_probs = torch.log(pred_smntc_probs + 1e-9)
             loss_smntc = self.criterion_semantic(pred_smntc_log_probs.view(B * H * W, SC), gt_smntc.view(B * H * W))
         else:
             loss_smntc = torch.tensor(0.0)
@@ -1043,7 +1043,7 @@ class Trainer(object):
                 self.active_learning(train_dataset, holdout_dataset)
                 print(f"[INFO] new train size {len(train_dataset):5}, new holdout size {len(holdout_dataset):5}")
                 
-
+    @torch.no_grad()
     def active_learning(self, train_dataset, holdout_dataset):
         if holdout_dataset is None or len(holdout_dataset) == 0:
             return 
@@ -1052,6 +1052,11 @@ class Trainer(object):
             self.model, holdout_dataset, 
             min(len(holdout_dataset), self.active_learning_num), # use all samples at the end
         )
+        if not self.opt.no_wandb:
+            wandb.log({"active_learning/images/": [
+                linear_transform(holdout_dataset.images[i].numpy()) \
+                    for i in new_k
+                ]})
         train_dataset.append(holdout_dataset, new_k)
         holdout_dataset.drop(new_k)
 
@@ -1294,6 +1299,9 @@ class Trainer(object):
 
         self.local_step = 0
 
+        uncert_mean = []
+        uncert_semantic_mean = []
+        max_mu = []
         for data in loader:
             
             # update grid every 16 steps
@@ -1320,6 +1328,7 @@ class Trainer(object):
          
             self.scaler.scale(loss).backward()
             with torch.no_grad():
+                # count grad
                 sum_grads = []
                 for p in self.model.parameters():
                     if p.requires_grad:
@@ -1330,7 +1339,13 @@ class Trainer(object):
                     sum_grads = [0.0]
                 if not self.opt.no_wandb:
                     wandb.log({"train/grad_norm": np.mean(sum_grads)})
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1000.0) # TODO not hardcode?
+                
+                # also count mean uncertainty
+                uncert_mean.append(preds_uncert.mean().item())
+                uncert_semantic_mean.append(preds_uncert_smntc.mean().item())
+                max_mu.append(preds_smntc.max().item())
+                
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 256.0) # TODO not hardcode?
             self.scaler.step(self.optimizer)
             self.scaler.update()
 
@@ -1358,6 +1373,12 @@ class Trainer(object):
         if self.ema is not None:
             self.ema.update()
 
+        wandb.log({
+            "uncert/uncert_mean": np.mean(uncert_mean),
+            "uncert/uncert_semantic_mean": np.mean(uncert_semantic_mean),
+            "uncert/max_mu": np.mean(max_mu),
+        })
+        
         average_loss = total_loss / self.local_step
         self.stats["loss"].append(average_loss)
 

@@ -292,7 +292,8 @@ class NeRFRenderer(nn.Module):
             'uncertainty_image': uncertainty_image,
             'semantic_uncertainty_image': semantic_uncertainty_image,
             'weights_sum': weights_sum,
-            'uncertainty_all': uncert.squeeze(-1), # for "choose new k"
+            # for "choose new k"
+            'uncertainty_all': uncert.squeeze(-1), 
             'semantic_uncertainty_all': semantic_uncert.squeeze(-1),
         }
 
