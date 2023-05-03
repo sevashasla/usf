@@ -195,3 +195,50 @@ experiments:
         lambd: 0.1
         omega: 0.3
         Ngen: 10
+        resume: True
+
+      - 
+        name: "room_1_9_add_mean_uncert"
+        
+        epochs: 1000
+        max_ray_batch: 4096
+        num_rays: 1024
+        num_steps: 512
+        
+        save_interval: 50
+        eval_interval: 3
+        active_learning_interval: 100
+        video_interval: 100
+
+        eval_ratio: 0.1
+        train_ratio: 0.05
+        holdout_ratio: 0.05
+        video_mode: 2
+
+        lambd: 0.1
+        omega: 0.3
+        Ngen: 10
+
+      - 
+        name: "room_1_10_add_max_mu"
+        
+        epochs: 550
+        max_ray_batch: 4096
+        num_rays: 1024
+        num_steps: 512
+        
+        save_interval: 50
+        eval_interval: 25
+        active_learning_interval: 100
+        video_interval: 100
+
+        eval_ratio: 0.1
+        train_ratio: 0.05
+        holdout_ratio: 0.05
+        video_mode: 2
+
+        lambd: 0.1
+        omega: 0.3
+        Ngen: 10
+        do_run: True
+        resume: True

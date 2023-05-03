@@ -470,12 +470,13 @@ class LPIPSMeter:
         return {f"{prefix}/LPIPS": self.measure()}
 
 @torch.no_grad()
-def choose_new_k(model, holdout_dataset, k):
+def choose_new_k(opt, model, holdout_dataset, k):
     '''
     Fucntion for active learning
     '''
     pres = []
     posts = []
+    su_weight = opt.su_weight
 
     for data in holdout_dataset.dataloader():
         model.eval()
@@ -491,15 +492,24 @@ def choose_new_k(model, holdout_dataset, k):
 
         outputs = model.render(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=False, **vars(holdout_dataset.opt))
 
-        pred_uncert = outputs['uncertainty_image'] + 1e-9
         pred_alpha = outputs['alphas']
-
         alphas_shifted = torch.cat([torch.ones_like(pred_alpha[..., :1]), 1 - pred_alpha + 1e-15], dim=-1) # [N, T+t+1]
         weights = pred_alpha * torch.cumprod(alphas_shifted, dim=-1)[..., :-1]
-        uncert_all = outputs['uncertainty_all'] + 1e-9
+        
+        pre = 0.0
+        post = 0.0
+        if opt.use_uncert:
+            pred_uncert = outputs['uncertainty_image'] + 1e-9
+            uncert_all = outputs['uncertainty_all'] + 1e-9
+            pre += (1.0 - su_weight) * uncert_all.sum([1,2])
+            post += (1.0 - su_weight) * (1. / (1. / uncert_all + weights ** 2.0 / pred_uncert)).sum([1 , 2])
 
-        pre = uncert_all.sum([1,2])
-        post = (1. / (1. / uncert_all + weights ** 2.0 / pred_uncert)).sum([1 , 2])
+        if opt.use_semantic_uncert:
+            pred_semantic_uncert = outputs['semantic_uncertainty_image'] + 1e-9
+            semantic_uncert_all = outputs['semantic_uncertainty_all'] + 1e-9
+            pre += su_weight * semantic_uncert_all.sum([1,2])
+            post += su_weight * (1. / (1. / semantic_uncert_all + weights ** 2.0 / pred_semantic_uncert)).sum([1 , 2])
+        
         pres.append(pre)
         posts.append(post)
     
@@ -618,7 +628,11 @@ class Trainer(object):
         self.device = device if device is not None else torch.device(f'cuda:{local_rank}' if torch.cuda.is_available() else 'cpu')
         self.console = Console()
         self.semantic_remap = semantic_remap
-        self.use_semantic = not opt.not_use_semantic
+
+        self.use_semantic = opt.use_semantic
+        self.use_semantic_uncert = opt.use_semantic_uncert
+        self.use_uncert = opt.use_uncert
+        
         self.lambd = lambd
         self.omega = omega
         self.metric_to_monitor = metric_to_monitor
@@ -815,22 +829,13 @@ class Trainer(object):
             loss_smntc = torch.tensor(0.0)
 
         # RGBUncertaintyLoss
-        # TODO
-        if pred_uncert.min() > 0:
-            loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
+        if self.use_uncert:
+            if pred_uncert.min() > 0:
+                loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
+            else:
+                loss_uncert = loss.mean()
         else:
-            loss_uncert = loss.mean()
-
-        # patch-based rendering
-        if self.opt.patch_size > 1:
-            gt_rgb = gt_rgb.view(-1, self.opt.patch_size, self.opt.patch_size, 3).permute(0, 3, 1, 2).contiguous()
-            pred_rgb = pred_rgb.view(-1, self.opt.patch_size, self.opt.patch_size, 3).permute(0, 3, 1, 2).contiguous()
-
-            # torch_vis_2d(gt_rgb[0])
-            # torch_vis_2d(pred_rgb[0])
-
-            # LPIPS loss [not useful...]
-            loss = loss + 1e-3 * self.criterion_lpips(pred_rgb, gt_rgb)
+            loss_uncert = torch.tensor(0.0)
 
         # special case for CCNeRF's rank-residual training
         if len(loss.shape) == 3: # [K, B, N]
@@ -862,9 +867,8 @@ class Trainer(object):
 
         loss = loss.mean()
         # they use weighted loss, but set lambda_ce = 1 it's ok
-        losses_to_log = {"train/loss": loss.item(), "train/loss_ce": loss_smntc.item(), "train/loss_uncert": loss_uncert.item()}
+        losses_to_log = {"train/loss_rgb": loss.item(), "train/loss_smntc": loss_smntc.item(), "train/loss_uncert": loss_uncert.item()}
 
-        # TODO: Maybe delete loss of MSE?
         loss = (1 - self.omega) * loss + self.lambd * loss_smntc + self.omega * loss_uncert
         if not self.opt.no_wandb:
             wandb.log({**losses_to_log, "train/sum_loss": loss.item()})
@@ -912,28 +916,43 @@ class Trainer(object):
         outputs = self.model.render(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=False, **vars(self.opt))
 
         pred_rgb = outputs['image'].reshape(B, H, W, 3)
+        pred_depth = outputs['depth'].reshape(B, H, W)
+
+        if self.use_semantic_uncert:
+            pred_uncert_smntc = outputs['semantic_uncertainty_image'].reshape(B, H, W, 1)
+        else:
+            pred_uncert_smntc = None
+
         if self.use_semantic:
             gt_smntc = semantic_images
             pred_smntc = outputs['semantic_image'].reshape(B, H, W, SC)
-            pred_uncert_smntc = outputs['semantic_uncertainty_image'].reshape(B, H, W, 1)
             pred_smntc_probs = self.model.semantic_postprocess_prob(pred_smntc, pred_uncert_smntc)
         else:
             gt_smntc = None
             pred_smntc = None
-            pred_uncert_smntc = None
             pred_smntc_probs = None
-        pred_uncert = outputs['uncertainty_image'].reshape(B, H, W, 1)
-        pred_depth = outputs['depth'].reshape(B, H, W)
-        pred_alpha = outputs['alphas'].reshape(B, H, W, -1)
+
+        if self.use_uncert:
+            pred_alpha = outputs['alphas'].reshape(B, H, W, -1)
+            pred_uncert = outputs['uncertainty_image'].reshape(B, H, W, 1)
+        else:
+            pred_uncert = None
+            pred_alpha = None
+            
 
         loss = self.criterion(pred_rgb, gt_rgb).mean()
+
         if self.use_semantic:
             pred_smntc_log_probs = torch.log(pred_smntc_probs + 1e-9)
             loss_smntc = self.criterion_semantic(pred_smntc_log_probs.view(B * H * W, SC), gt_smntc.view(B * H * W))
         else:
             loss_smntc = torch.tensor(0.0)
-        
-        loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
+
+        if self.use_uncert:
+            loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
+        else:
+            loss_uncert = torch.tensor(0.0)
+
         loss = (1 - self.omega) * loss + self.lambd * loss_smntc + self.omega * loss_uncert
 
         return {
@@ -963,16 +982,21 @@ class Trainer(object):
         SC = self.model.num_semantic_classes
 
         pred_rgb = outputs['image'].reshape(-1, H, W, 3)
-        if self.use_semantic:
+        pred_depth = outputs['depth'].reshape(-1, H, W)
+        if self.use_semantic_uncert:
             pred_uncert_smntc = outputs['semantic_uncertainty_image'].reshape(-1, H, W, 1)
+        else:
+            pred_uncert_smntc = None
+        if self.use_semantic:
             pred_smntc = outputs['semantic_image'].reshape(-1, H, W, SC)
             pred_smntc_probs = self.model.semantic_postprocess_prob(pred_smntc, pred_uncert_smntc)
         else:
             pred_smntc = None
-            pred_uncert_smntc = None
             pred_smntc_probs = None
-        pred_uncert = outputs['uncertainty_image'].reshape(-1, H, W, 1)
-        pred_depth = outputs['depth'].reshape(-1, H, W)
+        if self.use_uncert:
+            pred_uncert = outputs['uncertainty_image'].reshape(-1, H, W, 1)
+        else:
+            pred_uncert = None
 
         return {
             "pred_rgb": pred_rgb, 
@@ -1026,9 +1050,6 @@ class Trainer(object):
             if self.workspace is not None and self.local_rank == 0 and self.epoch % self.save_interval == 0:
                 self.save_checkpoint(full=True, best=False)
 
-            if self.epoch % self.opt.video_interval == 0:
-                self.test(test_loader, write_video=True)
-
             if self.epoch % self.eval_interval == 0:
                 self.evaluate_one_epoch(valid_loader)
                 self.save_checkpoint(full=False, best=True)
@@ -1040,7 +1061,10 @@ class Trainer(object):
                     self.test(test_loader, write_video=True)
                     break
 
-            if self.epoch % self.active_learning_interval == 0:
+            if self.epoch % self.opt.video_interval == 0:
+                self.test(test_loader, write_video=True)
+
+            if (self.use_uncert or self.use_semantic_uncert) and self.epoch % self.active_learning_interval == 0:
                 print(f"[INFO] active learning at {epoch}")
                 self.active_learning(train_dataset, holdout_dataset)
                 print(f"[INFO] new train size {len(train_dataset):5}, new holdout size {len(holdout_dataset):5}")
@@ -1051,11 +1075,12 @@ class Trainer(object):
             return 
         # it is new indices to extend train dataset
         new_k = choose_new_k(
+            self.opt, 
             self.model, holdout_dataset, 
             min(len(holdout_dataset), self.active_learning_num), # use all samples at the end
         )
         if not self.opt.no_wandb:
-            wandb.log({"active_learning/images/": [
+            wandb.log({"active_learning/images": [
                 linear_transform(holdout_dataset.images[i].numpy()) \
                     for i in new_k
                 ]})
@@ -1081,11 +1106,13 @@ class Trainer(object):
 
         if write_video:
             all_preds = []
-            all_preds_uncert = []
             all_preds_depth = []
             if self.use_semantic:
                 all_preds_smntc = []
+            if self.use_semantic_uncert:
                 all_preds_semantic_uncert = []
+            if self.use_uncert:
+                all_preds_uncert = []
 
         with torch.no_grad():
 
@@ -1099,78 +1126,102 @@ class Trainer(object):
                     preds_smntc_probs = full_pred_test['pred_smntc_probs']
                     preds_uncert = full_pred_test['pred_uncert']
                     preds_depth = full_pred_test['pred_depth']
-                    
 
                 if self.opt.color_space == 'linear':
                     preds = linear_to_srgb(preds)
 
                 pred = preds[0].detach().cpu().numpy()
                 pred = (pred * 255).astype(np.uint8)
+
+                pred_depth = preds_depth[0].detach().cpu().numpy()
+                pred_depth = (pred_depth * 255).astype(np.uint8)
                 
-                pred_uncert = preds_uncert[0].detach().cpu().numpy()
+                if self.use_uncert:
+                    pred_uncert = preds_uncert[0].detach().cpu().numpy()
 
                 if self.use_semantic:
                     pred_smntc = preds_smntc_probs[0].detach().cpu().numpy().argmax(axis=-1).astype(np.uint8)
+
+                if self.use_semantic_uncert:
                     semantic_uncert = preds_uncert_semantic[0].detach().cpu().numpy()
                     
-                pred_depth = preds_depth[0].detach().cpu().numpy()
-                pred_depth = (pred_depth * 255).astype(np.uint8)
 
                 if self.use_semantic and self.semantic_remap:
                     self.semantic_remap.inv_remap(pred_smntc, inplace=True)
                 if write_video:
                     all_preds.append(pred)
-                    all_preds_uncert.append(pred_uncert)
+                    if self.use_uncert:
+                        all_preds_uncert.append(pred_uncert)
                     if self.use_semantic:
                         all_preds_smntc.append(pred_smntc)
+                    if self.use_semantic_uncert:
                         all_preds_semantic_uncert.append(semantic_uncert)
                     all_preds_depth.append(pred_depth)
                 else:
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_rgb.png'), cv2.cvtColor(pred, cv2.COLOR_RGB2BGR))
-                    cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_uncert.png'), linear_transform(pred_uncert))
+                    if self.use_uncert:
+                        cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_uncert.png'), linear_transform(pred_uncert))
                     if self.use_semantic:
                         cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_smntc.png'), pred_smntc)
+                    if self.use_semantic_uncert:
                         cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_semantic_uncert.png'), linear_transform(semantic_uncert))
                     cv2.imwrite(os.path.join(save_path, f'{name}_{i:04d}_depth.png'), pred_depth)
 
                 pbar.update(loader.batch_size)
         
         if write_video:
+            to_log_videos = {}
             all_preds = np.stack(all_preds, axis=0)
-            all_preds_uncert = np.stack(all_preds_uncert, axis=0)
-            if self.use_semantic:
-                all_preds_smntc = np.stack(all_preds_smntc, axis=0)
-                all_preds_semantic_uncert = np.stack(all_preds_semantic_uncert, axis=0)
+            all_rgb_shape = all_preds.shape
             all_preds_depth = np.stack(all_preds_depth, axis=0)
             imageio.mimwrite(os.path.join(save_path, f'{name}_rgb.mp4'), all_preds, fps=10, quality=8, macro_block_size=1)
-            # HARDCODE += 50, more pretty to watch!
-            to_video_uncert = linear_transform(all_preds_uncert) + 50
-            imageio.mimwrite(os.path.join(save_path, f'{name}_uncert.mp4'), to_video_uncert, fps=10, quality=8, macro_block_size=1)
             imageio.mimwrite(os.path.join(save_path, f'{name}_depth.mp4'), all_preds_depth, fps=10, quality=8, macro_block_size=1)
             to_log_videos = {
                 "video/rgb": wandb.Video(os.path.join(save_path, f'{name}_rgb.mp4'), format="mp4"),
-                "video/uncert": wandb.Video(os.path.join(save_path, f'{name}_uncert.mp4'), format="mp4"),
                 "video/depth": wandb.Video(os.path.join(save_path, f'{name}_depth.mp4'), format="mp4"),
             }
-            if self.use_semantic:
-                to_video_semantic = self.sem_colormap[all_preds_smntc]
-                to_video_smntc_uncert = linear_transform(all_preds_semantic_uncert) + 50
-                # concat together
-                to_reshape = list(all_preds.shape)
-                to_reshape[-2] = -1
-                concated_rgb_smntc = np.stack([all_preds, to_video_semantic], axis=2).reshape(*to_reshape)
-                concated_uncert = np.stack([np.repeat(to_video_uncert, 3, -1), np.repeat(to_video_smntc_uncert, 3, -1)], axis=2).reshape(*to_reshape)
-                concated = np.hstack([concated_rgb_smntc, concated_uncert])
-                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), to_video_semantic, fps=10, quality=8, macro_block_size=1)
-                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), to_video_smntc_uncert, fps=10, quality=8, macro_block_size=1)
-                imageio.mimwrite(os.path.join(save_path, f'{name}_concated.mp4'), concated, fps=10, quality=8, macro_block_size=1)
-                
+            if self.use_uncert:
+                all_preds_uncert = np.stack(all_preds_uncert, axis=0)
+                # HARDCODE += 50, prettier to watch!
+                to_video_uncert = linear_transform(all_preds_uncert) + 50
+                imageio.mimwrite(os.path.join(save_path, f'{name}_uncert.mp4'), to_video_uncert, fps=10, quality=8, macro_block_size=1)
                 to_log_videos = {
-                    **to_log_videos,
-                    "video/semantic": wandb.Video(os.path.join(save_path, f'{name}_smntc.mp4'), format="mp4"),
-                    "video/semantic_uncert": wandb.Video(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), format="mp4"),
-                    "video/concated": wandb.Video(os.path.join(save_path, f'{name}_concated.mp4'), format="mp4"),
+                    **to_log_videos, 
+                    "video/uncert": wandb.Video(os.path.join(save_path, f'{name}_uncert.mp4'), format="mp4"),
                 }
+            else:
+                to_video_uncert = np.zeros((all_rgb_shape[0], all_rgb_shape[1], all_rgb_shape[2], 1), dtype=np.uint8)
+            if self.use_semantic:
+                all_preds_smntc = np.stack(all_preds_smntc, axis=0)
+                to_video_semantic = self.sem_colormap[all_preds_smntc]
+                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), to_video_semantic, fps=10, quality=8, macro_block_size=1)
+                to_log_videos = {
+                    **to_log_videos, 
+                    "video/semantic": wandb.Video(os.path.join(save_path, f'{name}_smntc.mp4'), format="mp4"),
+                }
+            else:
+                to_video_semantic = np.zeros(all_rgb_shape, dtype=np.uint8)
+
+            if self.use_semantic_uncert:
+                all_preds_semantic_uncert = np.stack(all_preds_semantic_uncert, axis=0)
+                to_video_smntc_uncert = linear_transform(all_preds_semantic_uncert) + 50
+                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), to_video_smntc_uncert, fps=10, quality=8, macro_block_size=1)
+                to_log_videos = {
+                    **to_log_videos, 
+                    "video/semantic_uncert": wandb.Video(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), format="mp4"),
+                }
+            else:
+                to_video_smntc_uncert = np.zeros((all_rgb_shape[0], all_rgb_shape[1], all_rgb_shape[2], 1), dtype=np.uint8)
+            # concat video together to more prettier to watch!
+            to_reshape = list(all_preds.shape)
+            to_reshape[-2] = -1
+            concated_rgb_smntc = np.stack([all_preds, to_video_semantic], axis=2).reshape(*to_reshape)
+            concated_uncert = np.stack([np.repeat(to_video_uncert, 3, -1), np.repeat(to_video_smntc_uncert, 3, -1)], axis=2).reshape(*to_reshape)
+            concated = np.hstack([concated_rgb_smntc, concated_uncert]).astype(np.uint8)
+            imageio.mimwrite(os.path.join(save_path, f'{name}_concated.mp4'), concated, fps=10, quality=8, macro_block_size=1)
+            to_log_videos = {**to_log_videos, 
+                "video/concated": wandb.Video(os.path.join(save_path, f'{name}_concated.mp4'), format="mp4"),
+            }
 
             if not self.opt.no_wandb:
                 wandb.log(to_log_videos)
@@ -1295,6 +1346,7 @@ class Trainer(object):
 
         return outputs
 
+
     def train_one_epoch(self, loader):
         self.log(f"==> Start Training Epoch {self.epoch}, lr={self.optimizer.param_groups[0]['lr']:.6f} ...")
 
@@ -1356,8 +1408,9 @@ class Trainer(object):
                     wandb.log({"train/grad_norm": np.mean(sum_grads)})
                 
                 # also count mean uncertainty
-                uncert_mean.append(preds_uncert.mean().item())
-                if self.use_semantic:
+                if self.use_uncert:
+                    uncert_mean.append(preds_uncert.mean().item())
+                if self.use_semantic_uncert:
                     uncert_semantic_mean.append(preds_uncert_smntc.mean().item())
                     max_mu.append(preds_smntc.max().item())
                 else:
@@ -1462,7 +1515,6 @@ class Trainer(object):
                     preds_uncert = full_pred_eval["pred_uncert"]
                     preds_depth = full_pred_eval["pred_depth"]
                     loss = full_pred_eval["loss"]
-                    
 
                 # all_gather/reduce the statistics (NCCL only support all_*)
                 if self.world_size > 1:
@@ -1473,10 +1525,10 @@ class Trainer(object):
                     dist.all_gather(preds_list, preds)
                     preds = torch.cat(preds_list, dim=0)
 
-
-                    preds_uncert_list = [torch.zeros_like(preds_uncert).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
-                    dist.all_gather(preds_uncert_list, preds_uncert)
-                    preds_uncert = torch.cat(preds_uncert_list, dim=0)
+                    if self.use_uncert:
+                        preds_uncert_list = [torch.zeros_like(preds_uncert).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
+                        dist.all_gather(preds_uncert_list, preds_uncert)
+                        preds_uncert = torch.cat(preds_uncert_list, dim=0)
 
                     if self.use_semantic:
                         preds_smntc_list = [torch.zeros_like(preds_smntc).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
@@ -1487,13 +1539,14 @@ class Trainer(object):
                         dist.all_gather(preds_smntc_probs_list, preds_smntc)
                         preds_smntc = torch.cat(preds_smntc_probs_list, dim=0)
 
-                        preds_uncert_smntc = [torch.zeros_like(preds_uncert_smntc).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
-                        dist.all_gather(preds_uncert_smntc, preds_smntc)
-                        preds_smntc = torch.cat(preds_uncert_smntc, dim=0)
-
                         gt_smntc_list = [torch.zeros_like(gt_smntc).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
                         dist.all_gather(gt_smntc_list, gt_smntc)
                         gt_smntc = torch.cat(gt_smntc_list, dim=0)
+
+                    if self.use_semantic_uncert:
+                        preds_uncert_smntc = [torch.zeros_like(preds_uncert_smntc).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
+                        dist.all_gather(preds_uncert_smntc, preds_smntc)
+                        preds_smntc = torch.cat(preds_uncert_smntc, dim=0)
                     
                     preds_depth_list = [torch.zeros_like(preds_depth).to(self.device) for _ in range(self.world_size)] # [[B, ...], [B, ...], ...]
                     dist.all_gather(preds_depth_list, preds_depth)
@@ -1517,14 +1570,21 @@ class Trainer(object):
 
                     # save image
                     save_path = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_rgb.png')
+                    save_path_depth = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_depth.png')
+                    if self.use_uncert:
+                        save_path_uncert = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_uncert.png')
                     if self.use_semantic:
                         save_path_smntc = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_smntc.png')
-                    save_path_uncert = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_uncert.png')
-                    save_path_depth = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_depth.png')
+                    if self.use_semantic_uncert:
+                        save_path_smntc_uncert = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_smntc_uncert.png')
 
                     #self.log(f"==> Saving validation image to {save_path}")
                     if self.save_eval_images:
                         os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                        os.makedirs(os.path.dirname(save_path_depth), exist_ok=True)
+                        os.makedirs(os.path.dirname(save_path_uncert), exist_ok=True)
+                        os.makedirs(os.path.dirname(save_path_smntc), exist_ok=True)
+                        os.makedirs(os.path.dirname(save_path_smntc_uncert), exist_ok=True)
 
                         if self.opt.color_space == 'linear':
                             preds = linear_to_srgb(preds)
@@ -1533,19 +1593,23 @@ class Trainer(object):
                         pred = (pred * 255).astype(np.uint8)
                         
                         if self.use_semantic:
-                            pred_smntc = preds_smntc[0].detach().cpu().numpy()
-                            pred_smntc = pred_smntc.argmax(axis=-1).astype(np.uint8)
-
-                        pred_uncert = preds_uncert[0].detach().cpu().numpy()
-
+                            pred_smntc = preds_smntc_probs[0].detach().cpu().numpy()
+                            pred_smntc = preds_smntc_probs.argmax(axis=-1).astype(np.uint8)
+                        if self.use_semantic_uncert:
+                            pred_smntc_uncert = preds_uncert_smntc[0].detach().cpu().numpy()
+                        if self.use_uncert:
+                            pred_uncert = preds_uncert[0].detach().cpu().numpy()
                         pred_depth = preds_depth[0].detach().cpu().numpy()
                         pred_depth = (pred_depth * 255).astype(np.uint8)
                         
                         cv2.imwrite(save_path, cv2.cvtColor(pred, cv2.COLOR_RGB2BGR))
+                        cv2.imwrite(save_path_depth, pred_depth)
                         if self.use_semantic:
                             cv2.imwrite(save_path_smntc, pred_smntc)
-                        cv2.imwrite(save_path_uncert, pred_uncert)
-                        cv2.imwrite(save_path_depth, pred_depth)
+                        if self.use_semantic_uncert:
+                            cv2.imwrite(save_path_smntc_uncert, pred_smntc_uncert)
+                        if self.use_uncert:
+                            cv2.imwrite(save_path_uncert, pred_uncert)
 
                     pbar.set_description(f"loss={loss_val:.4f} ({total_loss/self.local_step:.4f})")
                     pbar.update(loader.batch_size)

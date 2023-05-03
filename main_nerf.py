@@ -19,12 +19,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('path', type=str)
     parser.add_argument('--num_epoch', type=int, default=10)
+    parser.add_argument('--n_test', type=int, default=100)
     parser.add_argument('-O', action='store_true', help="equals --fp16 --cuda_ray --preload")
     parser.add_argument('--test', action='store_true', help="test mode")
     parser.add_argument('--workspace', type=str, default='workspace')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--eval_interval', type=int, default=5)
     parser.add_argument('--save_eval_images', action='store_true', help="save eval images or not")
+    parser.add_argument('--downscale', type=int, default=1)
     
     parser.add_argument('--eval_ratio', type=float, default=0.2)
     parser.add_argument('--train_ratio', type=float, default=None)
@@ -52,11 +54,6 @@ if __name__ == '__main__':
     parser.add_argument('--save_interval', type=int, default=10, help="how often to save")
     parser.add_argument('--use_loss_as_metric', action='store_true', help="")
     
-
-    ### active learning
-    parser.add_argument('--active_learning_interval', type=int, default=50, help="how often to apply active learning")
-    parser.add_argument('--active_learning_num', type=int, default=4, help="how often to apply active learning")
-    parser.add_argument('--Ngen', type=int, default=10, help="How many samples to generate in semantic postprocess prob")
 
     ### network backbone options
     parser.add_argument('--fp16', action='store_true', help="use amp mixed precision training")
@@ -91,12 +88,20 @@ if __name__ == '__main__':
     ### semantic
     parser.add_argument('--num_semantic_classes', type=int, required=False, help="number of semantic classes")
     parser.add_argument('--semantic_remap', type=json.loads, required=False, help="remap for semantic classes")
-    parser.add_argument('--not_use_semantic', action="store_true", help="use and predict the semantic labels")
+    parser.add_argument('--use_semantic', action="store_true", help="use and predict the semantic labels")
 
     # uncertrainty
     parser.add_argument('--alpha_uncert', type=float, default=0.01, help="coeff inside RGBUncertaintyLoss")
     parser.add_argument('--beta_min', type=float, default=0.01, help="beta_min in NeRFNetwork, min of uncertainty")
     parser.add_argument('--omega', type=float, default=1.0, help="weight of RGBUncertaintyLoss")
+    parser.add_argument('--use_uncert', action="store_true", help="use and predict the semantic labels")
+    parser.add_argument('--use_semantic_uncert', action="store_true", help="use and predict the semantic labels")
+
+    ### active learning
+    parser.add_argument('--active_learning_interval', type=int, default=None, help="how often to apply active learning")
+    parser.add_argument('--active_learning_num', type=int, default=4, help="how often to apply active learning")
+    parser.add_argument('--Ngen', type=int, default=10, help="How many samples to generate in semantic postprocess prob")
+    parser.add_argument('--su_weight', type=float, default=0.0, help="weight of Semantic Uncertainty during active learning")
 
     ### SPECIAL PARAMETERS
     # sparse-views
@@ -162,7 +167,7 @@ if __name__ == '__main__':
 
     print(opt)
 
-    if opt.test and opt.num_semantic_classes is None and not opt.not_use_semantic:
+    if opt.test and opt.num_semantic_classes is None and opt.use_semantic:
         raise RuntimeError("'num_semantic_classes' must be known if test")
     
     if opt.train_ratio is None:
@@ -170,6 +175,12 @@ if __name__ == '__main__':
 
     if opt.video_interval is None:
         opt.video_interval = opt.epochs
+
+    if opt.active_learning_interval is None:
+        opt.active_learning_interval = opt.epochs + 5
+
+    if opt.use_semantic_uncert:
+        opt.use_semantic = True 
 
     seed_everything(opt.seed)
 
@@ -184,6 +195,7 @@ if __name__ == '__main__':
     
     if opt.test:
         model = NeRFNetwork(
+            opt, 
             encoding="hashgrid",
             bound=opt.bound,
             cuda_ray=opt.cuda_ray,
@@ -197,7 +209,7 @@ if __name__ == '__main__':
         )
 
         metrics = [PSNRMeter(), LPIPSMeter(device=device), SSIMMeter(device=device)]
-        if not opt.not_use_semantic:
+        if opt.use_semantic:
             segmentation_metrics = [SegmentationMeter(opt.num_semantic_classes)]
         else:
             segmentation_metrics = []
@@ -222,12 +234,13 @@ if __name__ == '__main__':
     
     else:
 
-        nerf_dataset = NeRFDataset(opt, device=device, type='train')
+        nerf_dataset = NeRFDataset(opt, device=device, type='train', downscale=opt.downscale)
 
         num_semantic_classes = nerf_dataset.num_semantic_classes     
         train_loader = nerf_dataset.dataloader()
 
         model = NeRFNetwork(
+            opt, 
             encoding="hashgrid",
             bound=opt.bound,
             cuda_ray=opt.cuda_ray,
@@ -253,7 +266,7 @@ if __name__ == '__main__':
             )
 
         metrics = [PSNRMeter(), LPIPSMeter(device=device), SSIMMeter(device=device)]
-        if not opt.not_use_semantic:
+        if opt.use_semantic:
             segmentation_metrics = [SegmentationMeter(num_semantic_classes)]
         else:
             segmentation_metrics = []
@@ -283,7 +296,7 @@ if __name__ == '__main__':
         
         else:
             valid_dataset = NeRFDataset(
-                opt, device=device, type='val', downscale=1, 
+                opt, device=device, type='val', downscale=opt.downscale, 
                 semantic_remap=nerf_dataset.semantic_remap,
                 tvh_indexer=nerf_dataset.tvh_indexer
             )
@@ -292,7 +305,7 @@ if __name__ == '__main__':
                 holdout_dataset = None
             else:    
                 holdout_dataset = NeRFDataset(
-                    opt, device=device, type='holdout', downscale=1, 
+                    opt, device=device, type='holdout', downscale=opt.downscale, 
                     semantic_remap=nerf_dataset.semantic_remap,
                     tvh_indexer=nerf_dataset.tvh_indexer
                 )
@@ -310,12 +323,11 @@ if __name__ == '__main__':
                     resume=opt.resume,
                 )
 
-            test_dataset = NeRFDataset(opt, device=device, type='test', semantic_remap=nerf_dataset.semantic_remap)
+            test_dataset = NeRFDataset(opt, device=device, type='test', semantic_remap=nerf_dataset.semantic_remap, n_test=opt.n_test)
             test_loader = test_dataset.dataloader()
             trainer.train(nerf_dataset, valid_dataset, test_dataset, opt.epochs, holdout_dataset)
 
             # also test
-            
             if test_loader.has_gt:
                 trainer.evaluate(test_loader) # blender has gt, so evaluate it.
             
@@ -330,3 +342,4 @@ if __name__ == '__main__':
             if not opt.no_wandb:
                 wandb.run.summary["t_mean_render"] = tm.mean('render')
                 wandb.finish()
+

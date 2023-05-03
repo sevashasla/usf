@@ -9,6 +9,7 @@ from .renderer import NeRFRenderer
 
 class NeRFNetwork(NeRFRenderer):
     def __init__(self,
+                 opt, 
                  encoding="hashgrid",
                  encoding_dir="sphere_harmonics",
                  encoding_bg="hashgrid",
@@ -31,7 +32,10 @@ class NeRFNetwork(NeRFRenderer):
                  ):
         super().__init__(bound, **kwargs)
 
-        self.use_semantic = num_semantic_classes > 0
+        self.use_uncert = opt.use_uncert
+        self.use_semantic = opt.use_semantic
+        self.use_semantic_uncert = opt.use_semantic_uncert
+
         self.num_semantic_classes = num_semantic_classes
         self.Ngen = Ngen
 
@@ -120,19 +124,21 @@ class NeRFNetwork(NeRFRenderer):
                 semantic_net.append(nn.Linear(in_dim, out_dim, bias=False))
             self.semantic_net = nn.ModuleList(semantic_net)
         
-            # uncertainty semantic
+        # uncertainty semantic
+        if self.use_semantic_uncert:
             self.beta_min = beta_min
             self.layer_semantic_uncertainty = nn.Linear(self.geo_feat_dim, 1)
 
-        # uncertainty color
-        self.beta_min = beta_min
-        self.layer_uncertainty = nn.Linear(self.geo_feat_dim, 1)
+        # uncertainty
+        if self.use_uncert:
+            self.beta_min = beta_min
+            self.layer_uncertainty = nn.Linear(self.geo_feat_dim, 1)
 
-        
-
-    def semantic_postprocess_prob(self, mu, sigma):
+    def semantic_postprocess_prob(self, mu, sigma=None):
         '''
-        we suppose that logits ~ Normal(mu, sigma^2)
+        2 options:
+            1) deterministic if not use_semantic_uncert
+            2) we suppose that logits ~ Normal(mu, sigma^2)
 
         ---
         Arguments
@@ -142,22 +148,22 @@ class NeRFNetwork(NeRFRenderer):
 
         sigma: [B, ...]
             - sigma of logits
-        
-        Ngen: int
-            - how many vectors to generate
         '''
 
-        init_shape = mu.shape
-        mu = mu.view(init_shape[0], -1, init_shape[-1])
-        sigma = sigma.view(init_shape[0], -1, 1)
-        B, N, SC = mu.shape
-        probs = torch.zeros_like(mu)
-        # cycle to avoid OOM
-        for _ in range(self.Ngen):
-            epsilons = torch.randn(B, N, SC, dtype=mu.dtype, device=mu.device)
-            logits = mu + sigma * epsilons
-            probs = probs + F.softmax(logits, dim=-1)
-        probs = (probs / self.Ngen).view(init_shape)
+        if self.use_semantic_uncert:
+            init_shape = mu.shape
+            mu = mu.view(init_shape[0], -1, init_shape[-1])
+            sigma = sigma.view(init_shape[0], -1, 1)
+            B, N, SC = mu.shape
+            probs = torch.zeros_like(mu)
+            # cycle to avoid OOM
+            for _ in range(self.Ngen):
+                epsilons = torch.randn(B, N, SC, dtype=mu.dtype, device=mu.device)
+                logits = mu + sigma * epsilons
+                probs = probs + F.softmax(logits, dim=-1)
+            probs = (probs / self.Ngen).view(init_shape)
+        else:
+            probs = F.softmax(mu, dim=-1)
         return probs
         
 
@@ -179,7 +185,6 @@ class NeRFNetwork(NeRFRenderer):
         #sigma = F.relu(h[..., 0])
         sigma = trunc_exp(h[..., 0])
         geo_feat = h[..., 1:]
-
 
         # color
         d = self.encoder_dir(d)
@@ -204,12 +209,18 @@ class NeRFNetwork(NeRFRenderer):
             semantic = None
 
         # uncertainty
-        uncertainty = self.layer_uncertainty(geo_feat)
-        uncertainty = F.softplus(uncertainty) + self.beta_min
-        
+        if self.use_uncert:
+            uncertainty = self.layer_uncertainty(geo_feat)
+            uncertainty = F.softplus(uncertainty) + self.beta_min
+        else:
+            uncertainty = None
+
         # semantic uncertainty
-        semantic_uncertainty = self.layer_semantic_uncertainty(geo_feat)
-        semantic_uncertainty = F.softplus(semantic_uncertainty) + self.beta_min
+        if self.use_semantic_uncert:
+            semantic_uncertainty = self.layer_semantic_uncertainty(geo_feat)
+            semantic_uncertainty = F.softplus(semantic_uncertainty) + self.beta_min
+        else:
+            semantic_uncertainty = None
 
         return sigma, color, semantic, uncertainty, semantic_uncertainty
 
@@ -285,7 +296,7 @@ class NeRFNetwork(NeRFRenderer):
         # mask: [N,], bool, indicates where we actually needs to compute rgb.
 
         if not self.use_semantic:
-            return None
+            raise RuntimeError("call semantic pred, but not use semantic")
 
         if mask is not None:
             smntc = torch.zeros(mask.shape[0], self.num_semantic_classes, dtype=x.dtype, device=x.device) # [N, SC]
@@ -312,6 +323,9 @@ class NeRFNetwork(NeRFRenderer):
         # x: [N, 3] in [-bound, bound]
         # mask: [N,], bool, indicates where we actually needs to compute rgb.
 
+        if not self.use_uncert:
+            raise RuntimeError("call uncertainty pred, but not use uncert")
+
         if mask is not None:
             uncert = torch.zeros(mask.shape[0], 1, dtype=x.dtype, device=x.device) # [N, 3]
             # in case of empty mask
@@ -335,6 +349,9 @@ class NeRFNetwork(NeRFRenderer):
     def semantic_uncertainty_pred(self, x, mask=None, geo_feat=None, **kwargs):
         # x: [N, 3] in [-bound, bound]
         # mask: [N,], bool, indicates where we actually needs to compute rgb.
+
+        if not self.use_semantic_uncert:
+            raise RuntimeError("call semantic uncertainty pred, but not use uncert")
 
         if mask is not None:
             semantic_uncert = torch.zeros(mask.shape[0], 1, dtype=x.dtype, device=x.device) # [N, 3]
@@ -364,10 +381,12 @@ class NeRFNetwork(NeRFRenderer):
             {'params': self.sigma_net.parameters(), 'lr': lr},
             {'params': self.encoder_dir.parameters(), 'lr': lr},
             {'params': self.color_net.parameters(), 'lr': lr}, 
-            {'params': self.layer_uncertainty.parameters(), 'lr': lr}, 
         ]
+        if self.use_uncert:
+            params.append({'params': self.layer_uncertainty.parameters(), 'lr': lr})
         if self.use_semantic:
             params.append({'params': self.semantic_net.parameters(), 'lr': lr})
+        if self.use_semantic_uncert:
             params.append({'params': self.layer_semantic_uncertainty.parameters(), 'lr': lr})
         if self.bg_radius > 0:
             params.append({'params': self.encoder_bg.parameters(), 'lr': lr})

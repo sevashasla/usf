@@ -1,4 +1,4 @@
-name: "uncertainty-19-04-2023" # name of group in wandb
+name: "uncertainty-26-04-2023" # name of group in wandb
 place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
 sequences: ["Sequence_1", "Sequence_2"]
 scene_dir: ""
@@ -19,464 +19,106 @@ gpu: 0
 experiments:
 ### EXPERIMENT 1 ###
   -
-      w: 360
-      h: 240
-      place: ""
-      sequence: ""
-      need_transforms: False
-
-      torch_ngp:
-        - 
-          name: "lego19_try_on_torch_ngp"
-          epochs: 300
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.2
-          eval_interval: 50
-          save_interval: 50
-          do_run: False
-        
-        - 
-          name: "lego20_change_poses"
-          epochs: 250
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.2
-          eval_interval: 50
-          save_interval: 50
-          do_run: False
-
-        - 
-          name: "lego21_change_poses_2"
-          epochs: 100
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.2
-          eval_interval: 50
-          save_interval: 50
-          do_run: False
-
-
-        - 
-          name: "lego22_change_poses_2"
-          epochs: 700
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.2
-          eval_interval: 50
-          save_interval: 50  
-          do_run: False
-        - 
-          name: "lego23_change_init"
-          epochs: 500
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.2
-          bound: 4
-          scale: 0.33
-          eval_interval: 50
-          save_interval: 50
-          do_run: False
-
-        -
-          name: "lego22_change_init"
-          epochs: 500
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.2
-          bound: 2
-          scale: 0.33
-          eval_interval: 50
-          save_interval: 50
-          do_run: False
-
-        -
-          name: "lego24_change_lr"
-          epochs: 500
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.2
-          bound: 2
-          scale: 0.33
-          lr: 0.0003
-          eval_interval: 50
-          save_interval: 50
-          do_run: False
-
-        -
-          name: "lego25_change_params"
-          epochs: 500
-          max_ray_batch: 4096
-          cuda_ray: True
-          num_rays: 1024
-          eval_ratio: 0.2
-          bound: 3
-          scale: 0.33
-          lr: 0.001
-          eval_interval: 50
-          save_interval: 50
-          do_run: False
-
-        -
-          name: "lego26_change_params_again"
-          epochs: 250
-          max_ray_batch: 4096
-          cuda_ray: True
-          num_rays: 1024
-          eval_ratio: 0.2
-          bound: 1.0
-          scale: 0.8
-          lr: 0.001
-          eval_interval: 50
-          save_interval: 50
-          dt_gamma: 0.0
-          do_run: False
-
-        -
-          name: "lego27_change_original_poses"
-          epochs: 250
-          max_ray_batch: 4096
-          cuda_ray: True
-          num_rays: 1024
-          eval_ratio: 0.2
-          bound: 1.0
-          scale: 0.8
-          lr: 0.001
-          eval_interval: 50
-          save_interval: 50
-          dt_gamma: 0.0
-          do_run: False
-
-        -
-          name: "lego28_bigger_lr"
-          epochs: 700
-          max_ray_batch: 4096
-          cuda_ray: True
-          num_rays: 1024
-          eval_ratio: 0.2
-          bound: 1.0
-          scale: 0.8
-          eval_interval: 25
-          save_interval: 50
-          dt_gamma: 0.0
-          resume: True
-          do_run: False
-        
-      semantic_nerf:
-        - 
-
-      semantic_ngp:
-        - 
-          name: "lego1"
-          epochs: 100
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.8
-          eval_interval: 50
-          lambd: 0.01
-          omega: 0.5
-          not_use_semantic: True
-          do_run: False
-
-        - 
-          name: "lego2"
-          epochs: 50
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.5
-          eval_interval: 50
-          lambd: 0.01
-          omega: 0.5
-          not_use_semantic: True
-          resume: True
-          do_run: False
-        - 
-          name: "lego3_with_grad"
-          epochs: 100
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.5
-          eval_interval: 50
-          lambd: 0.01
-          omega: 0.1
-          not_use_semantic: True
-          resume: True
-          do_run: False
-        - 
-          name: "lego4"
-          epochs: 100
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.8
-          eval_interval: 50
-          lambd: 0.01
-          omega: 0.5
-          not_use_semantic: True
-          do_run: False
-        - 
-          name: "lego5"
-          epochs: 100
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.8
-          eval_interval: 50
-          lambd: 0.01
-          omega: 0.5
-          not_use_semantic: True
-          resume: True
-          do_run: False
-        - 
-          name: "lego6_add_grad_clipping"
-          epochs: 100
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.8
-          eval_interval: 50
-          lambd: 0.01
-          omega: 0.5
-          not_use_semantic: True
-          do_run: False
-
-
-        - 
-          name: "lego7_more_epochs"
-          epochs: 500
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.8
-          eval_interval: 250
-          lambd: 0.01
-          omega: 0.5
-          not_use_semantic: True
-          do_run: False
-
-        - 
-          name: "lego8_more_epochs"
-          epochs: 320
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.2
-          eval_interval: 100
-          lambd: 0.01
-          omega: 0.5
-          not_use_semantic: True
-          resume: True
-          do_run: False
-
-        - 
-          name: "lego9_smaller_omega"
-          epochs: 500
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.2
-          eval_interval: 100
-          lambd: 0.01
-          omega: 0.1
-          not_use_semantic: True
-          resume: True
-          do_run: False
-
-        - 
-          name: "lego10_more_iters_bigger_omega"
-          epochs: 1000
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.2
-          eval_interval: 100
-          lambd: 0.01
-          omega: 0.3
-          not_use_semantic: True
-          do_run: False
-
-        - 
-          name: "lego11_smaller_lr"
-          epochs: 500
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.2
-          eval_interval: 100
-          lambd: 0.01
-          omega: 0.3
-          not_use_semantic: True
-          lr: 0.001 # 1e-3
-          resume: True
-          do_run: False
-
-        - 
-          name: "lego12"
-          epochs: 500
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.2
-          eval_interval: 100
-          lambd: 0.01
-          omega: 0.5
-          not_use_semantic: True
-          lr: 0.001 # 1e-3
-          resume: True
-          do_run: False
-
-        - 
-          name: "lego13_compare_zero"
-          epochs: 500
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.2
-          eval_interval: 100
-          lambd: 0.01
-          omega: 0.5
-          not_use_semantic: True
-          lr: 0.001 # 1e-3
-          do_run: False
-
-        - 
-          name: "lego14_smaller_dataset"
-          epochs: 250
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.7
-          eval_interval: 100
-          lambd: 0.01
-          omega: 0.5
-          not_use_semantic: True
-          lr: 0.005 # 5e-3
-          do_run: False
-
-        - 
-          name: "lego15_no_uncertainty"
-          epochs: 250
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.7
-          eval_interval: 100
-          lambd: 0.01
-          omega: 0.0
-          not_use_semantic: True
-          save_interval: 50
-          lr: 0.005 # 5e-3
-          do_run: False
-
-        - 
-          name: "lego16_no_uncertainty"
-          epochs: 600
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.2
-          eval_interval: 100
-          lambd: 0.01
-          omega: 0.0
-          not_use_semantic: True
-          save_interval: 50
-          lr: 0.005 # 5e-3
-          resume: True
-          do_run: False
-
-        - 
-          name: "lego17_small_uncert"
-          epochs: 600
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.7
-          eval_interval: 100
-          lambd: 0.01
-          omega: 0.1
-          not_use_semantic: True
-          save_interval: 50
-          lr: 0.005 # 5e-3
-          do_run: False
-
-        - 
-          name: "lego18_small_uncert_more_train"
-          epochs: 380
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          eval_ratio: 0.1
-          eval_interval: 100
-          lambd: 0.01
-          omega: 0.1
-          not_use_semantic: True
-          save_interval: 50
-          lr: 0.001 # 1e-3
-          resume: True
-          do_run: False
-          
-### EXPERIMENT 2 ### 
-  -
       w: 800
       h: 800
       place: ""
       sequence: ""
       need_transforms: False
 
+      semantic_ngp:
+        - 
+          name: "lego1"
+          epochs: 300
+          max_ray_batch: 2048
+          num_rays: 1024
+          num_steps: 512
+          eval_ratio: 0.8
+          lambd: 0.01
+          omega: 0.3
+          not_use_semantic: True
+          save_interval: 50
+          eval_interval: 25
+          do_run: False
+
+        - 
+          name: "lego1.1"
+          epochs: 300
+          max_ray_batch: 2048
+          num_rays: 1024
+          num_steps: 512
+          eval_ratio: 0.9
+          lambd: 0.01
+          omega: 0.3
+          not_use_semantic: True
+          save_interval: 50
+          eval_interval: 50
+          resume: True
+          do_run: False
+
+        - 
+          name: "lego2"
+          epochs: 300
+          max_ray_batch: 2048
+          num_rays: 1024
+          num_steps: 512
+          eval_ratio: 0.8
+          eval_interval: 50
+          save_interval: 50
+          lambd: 0.01
+          omega: 0.5
+          not_use_semantic: True
+          do_run: False
+
+        - 
+          name: "lego3"
+          epochs: 300
+          max_ray_batch: 2048
+          num_rays: 1024
+          num_steps: 512
+          eval_ratio: 0.8
+          lambd: 0.01
+          omega: 0.7
+          not_use_semantic: True
+          save_interval: 50
+          eval_interval: 50
+          do_run: False
+
+        - 
+          name: "lego4"
+          epochs: 300
+          max_ray_batch: 2048
+          num_rays: 1024
+          num_steps: 512
+          eval_ratio: 0.8
+          eval_interval: 50
+          save_interval: 50
+          lambd: 0.01
+          omega: 0.1
+          not_use_semantic: True
+          do_run: False
+
+        - 
+          name: "lego5"
+          epochs: 300
+          max_ray_batch: 2048
+          num_rays: 1024
+          num_steps: 512
+          eval_ratio: 0.8
+          eval_interval: 50
+          save_interval: 50
+          lambd: 0.01
+          omega: 0.05
+          not_use_semantic: True
+          do_run: False
+
       torch_ngp:
         - 
-          name: "lego32_bigger_image"
-          epochs: 100
+          name: "lego6"
+          epochs: 300
           max_ray_batch: 2048
-          num_rays: 4096
+          num_rays: 1024
           num_steps: 512
-          eval_ratio: 0.02
-          eval_interval: 25
+          eval_ratio: 0.8
           save_interval: 50
-          cuda_ray: True
+          eval_interval: 50
           do_run: False
-
-        - 
-          name: "lego33_bigger_dataset"
-          epochs: 100
-          max_ray_batch: 2048
-          num_rays: 4096
-          num_steps: 512
-          eval_ratio: 0.02
-          eval_interval: 25
-          save_interval: 50
-          cuda_ray: True
-          do_run: False
-
-        - 
-          name: "lego34_better_resolution"
-          epochs: 100
-          max_ray_batch: 2048
-          num_rays: 4096
-          num_steps: 512
-          eval_ratio: 0.02
-          eval_interval: 25
-          save_interval: 50
-          cuda_ray: True
-          do_run: False
-
-        - 
-          name: "lego35_worse_resolution"
-          epochs: 100
-          max_ray_batch: 2048
-          num_rays: 4096
-          num_steps: 512
-          eval_ratio: 0.02
-          eval_interval: 25
-          save_interval: 50
-          cuda_ray: True

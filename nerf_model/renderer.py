@@ -231,11 +231,12 @@ class NeRFRenderer(nn.Module):
         if self.use_semantic:
             smntc = self.semantic_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
             smntc = smntc.view(N, -1, self.num_semantic_classes) # [N, T+t, SC]
+        if self.use_semantic_uncert:
             semantic_uncert = self.semantic_uncertainty_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
             semantic_uncert = semantic_uncert.view(N, -1, 1) # [N, T+t, 1]
-        uncert = self.uncertainty_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
-        uncert = uncert.view(N, -1, 1) # [N, T+t, 1]
-
+        if self.use_uncert:
+            uncert = self.uncertainty_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
+            uncert = uncert.view(N, -1, 1) # [N, T+t, 1]
 
         #print(xyzs.shape, 'valid_rgb:', mask.sum().item())
 
@@ -252,10 +253,10 @@ class NeRFRenderer(nn.Module):
         # calculate semantic: use the same weights!
         if self.use_semantic:
             semantic_image = torch.sum(weights.unsqueeze(-1) * smntc, dim=-2) # [N, SC]
+        if self.use_semantic_uncert:
             semantic_uncertainty_image = torch.sum(weights.unsqueeze(-1) ** 2.0 * semantic_uncert, dim=-2)
-
-        # calculate uncertainty: use the same weights!
-        uncertainty_image = torch.sum(weights.unsqueeze(-1) ** 2.0 * uncert, dim=-2)
+        if self.use_uncert:
+            uncertainty_image = torch.sum(weights.unsqueeze(-1) ** 2.0 * uncert, dim=-2)
 
         # mix background color
         if self.bg_radius > 0:
@@ -270,17 +271,27 @@ class NeRFRenderer(nn.Module):
         # ---
 
         image = image.view(*prefix, 3)
+        depth = depth.view(*prefix)
+        alphas = alphas.view(*prefix, -1)
+
         if self.use_semantic:
             semantic_image = semantic_image.view(*prefix, self.num_semantic_classes)
+        else:
+            semantic_image = None
+
+        if self.use_semantic_uncert:
             semantic_uncertainty_image = semantic_uncertainty_image.view(*prefix, 1)
             semantic_uncert = semantic_uncert.squeeze(-1)
         else:
-            semantic_image = None
             semantic_uncertainty_image = None
             semantic_uncert = None
-        uncertainty_image = uncertainty_image.view(*prefix, 1)
-        depth = depth.view(*prefix)
-        alphas = alphas.view(*prefix, -1)
+    
+        if self.use_uncert:
+            uncertainty_image = uncertainty_image.view(*prefix, 1)
+            uncert = uncert.squeeze(-1)
+        else:
+            uncertainty_image = None
+            uncert = None
 
         # tmp: reg loss in mip-nerf 360
         # z_vals_shifted = torch.cat([z_vals[..., 1:], sample_dist * torch.ones_like(z_vals[..., :1])], dim=-1)
@@ -296,7 +307,7 @@ class NeRFRenderer(nn.Module):
             'semantic_uncertainty_image': semantic_uncertainty_image,
             'weights_sum': weights_sum,
             # for "choose new k"
-            'uncertainty_all': uncert.squeeze(-1), 
+            'uncertainty_all': uncert, 
             'semantic_uncertainty_all': semantic_uncert,
         }
 
@@ -604,11 +615,25 @@ class NeRFRenderer(nn.Module):
             image = torch.empty((B, N, 3), device=device)
             if self.use_semantic:
                 semantic_image = torch.empty((B, N, self.num_semantic_classes), device=device)
+            else:
+                semantic_image = None
+            if self.use_semantic_uncert:
                 semantic_uncertainty_image = torch.empty((B, N, 1), device=device)
                 semantic_uncertainty_all = torch.empty((B, N, kwargs['num_steps'] + kwargs['upsample_steps']), device=device)
-            uncertainty_image = torch.empty((B, N, 1), device=device)
-            alphas = torch.empty((B, N, kwargs['num_steps'] + kwargs['upsample_steps']), device=device)
-            uncertainty_all = torch.empty((B, N, kwargs['num_steps'] + kwargs['upsample_steps']), device=device)
+            else:
+                semantic_uncertainty_image = None
+                semantic_uncertainty_all = None
+            if self.use_uncert:
+                uncertainty_image = torch.empty((B, N, 1), device=device)
+                uncertainty_all = torch.empty((B, N, kwargs['num_steps'] + kwargs['upsample_steps']), device=device)
+            else:
+                uncertainty_image = None
+                uncertainty_all = None
+            
+            if self.use_uncert or self.use_semantic_uncert:
+                alphas = torch.empty((B, N, kwargs['num_steps'] + kwargs['upsample_steps']), device=device)
+            else:
+                alphas = None
             
             for b in range(B):
                 head = 0
@@ -617,11 +642,14 @@ class NeRFRenderer(nn.Module):
                     results_ = _run(rays_o[b:b+1, head:tail], rays_d[b:b+1, head:tail], **kwargs)
                     depth[b:b+1, head:tail] = results_['depth']
                     image[b:b+1, head:tail] = results_['image']
-                    uncertainty_image[b:b+1, head:tail] = results_['uncertainty_image']
-                    alphas[b:b+1, head:tail] = results_['alphas']
-                    uncertainty_all[b:b+1, head:tail] = results_['uncertainty_all']
+                    if self.use_uncert:
+                        uncertainty_image[b:b+1, head:tail] = results_['uncertainty_image']
+                        uncertainty_all[b:b+1, head:tail] = results_['uncertainty_all']
+                    if self.use_uncert or self.use_semantic_uncert:
+                        alphas[b:b+1, head:tail] = results_['alphas']
                     if self.use_semantic:
                         semantic_image[b:b+1, head:tail] = results_['semantic_image']
+                    if self.use_semantic_uncert:
                         semantic_uncertainty_image[b:b+1, head:tail] = results_['semantic_uncertainty_image']
                         semantic_uncertainty_all[b:b+1, head:tail] = results_['semantic_uncertainty_all']
                     head += max_ray_batch
@@ -632,15 +660,9 @@ class NeRFRenderer(nn.Module):
             results['uncertainty_image'] = uncertainty_image
             results['uncertainty_all'] = uncertainty_all
             results['alphas'] = alphas
-
-            if self.use_semantic:
-                results['semantic_image'] = semantic_image
-                results['semantic_uncertainty_image'] = semantic_uncertainty_image
-                results['semantic_uncertainty_all'] = semantic_uncertainty_all
-            else:
-                results['semantic_image'] = None
-                results['semantic_uncertainty_image'] = None
-                results['semantic_uncertainty_all'] = None
+            results['semantic_image'] = semantic_image
+            results['semantic_uncertainty_image'] = semantic_uncertainty_image
+            results['semantic_uncertainty_all'] = semantic_uncertainty_all
         else:
             results = _run(rays_o, rays_d, **kwargs)
 

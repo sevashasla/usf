@@ -120,7 +120,7 @@ class NeRFDataset:
         self.training = self.type in ['train', 'all', 'trainval']
         self.num_rays = self.opt.num_rays if self.training else -1
         self.tvh_indexer = tvh_indexer
-        self.use_semantic = not opt.not_use_semantic
+        self.use_semantic = opt.use_semantic
 
         self.rand_pose = opt.rand_pose
 
