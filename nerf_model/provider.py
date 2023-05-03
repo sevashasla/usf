@@ -246,7 +246,8 @@ class NeRFDataset:
                     self.semantic_images = self.semantic_images.to(self.device)
             if self.error_map is not None:
                 self.error_map = self.error_map.to(self.device)
-
+        if not self.images is None:
+            print("images", self.images.shape)
         self._load_intrinsics(transform, downscale)
 
     def _split(self, n, random_state=42):

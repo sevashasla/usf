@@ -26,7 +26,6 @@ class SemanticRemap:
          # index <-> class
         self.inv_remap_dict = {item: key for key, item in self.direct_remap_dict.items()}
 
-
     def __create_direct_inv_remap(self, semantic_images):
         print("[INFO] Start semantic remap ->\n\t", end="")
 

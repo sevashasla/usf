@@ -231,7 +231,6 @@ class NeRFRenderer(nn.Module):
         if self.use_semantic:
             smntc = self.semantic_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
             smntc = smntc.view(N, -1, self.num_semantic_classes) # [N, T+t, SC]
-            
             semantic_uncert = self.semantic_uncertainty_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
             semantic_uncert = semantic_uncert.view(N, -1, 1) # [N, T+t, 1]
         uncert = self.uncertainty_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
@@ -273,8 +272,12 @@ class NeRFRenderer(nn.Module):
         image = image.view(*prefix, 3)
         if self.use_semantic:
             semantic_image = semantic_image.view(*prefix, self.num_semantic_classes)
+            semantic_uncertainty_image = semantic_uncertainty_image.view(*prefix, 1)
+            semantic_uncert = semantic_uncert.squeeze(-1)
         else:
             semantic_image = None
+            semantic_uncertainty_image = None
+            semantic_uncert = None
         uncertainty_image = uncertainty_image.view(*prefix, 1)
         depth = depth.view(*prefix)
         alphas = alphas.view(*prefix, -1)
@@ -294,7 +297,7 @@ class NeRFRenderer(nn.Module):
             'weights_sum': weights_sum,
             # for "choose new k"
             'uncertainty_all': uncert.squeeze(-1), 
-            'semantic_uncertainty_all': semantic_uncert.squeeze(-1),
+            'semantic_uncertainty_all': semantic_uncert,
         }
 
     # TODO: Change this function to use in project
@@ -601,12 +604,12 @@ class NeRFRenderer(nn.Module):
             image = torch.empty((B, N, 3), device=device)
             if self.use_semantic:
                 semantic_image = torch.empty((B, N, self.num_semantic_classes), device=device)
+                semantic_uncertainty_image = torch.empty((B, N, 1), device=device)
+                semantic_uncertainty_all = torch.empty((B, N, kwargs['num_steps'] + kwargs['upsample_steps']), device=device)
             uncertainty_image = torch.empty((B, N, 1), device=device)
-            semantic_uncertainty_image = torch.empty((B, N, 1), device=device)
             alphas = torch.empty((B, N, kwargs['num_steps'] + kwargs['upsample_steps']), device=device)
             uncertainty_all = torch.empty((B, N, kwargs['num_steps'] + kwargs['upsample_steps']), device=device)
-            semantic_uncertainty_all = torch.empty((B, N, kwargs['num_steps'] + kwargs['upsample_steps']), device=device)
-
+            
             for b in range(B):
                 head = 0
                 while head < N:

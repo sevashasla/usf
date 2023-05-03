@@ -120,13 +120,14 @@ class NeRFNetwork(NeRFRenderer):
                 semantic_net.append(nn.Linear(in_dim, out_dim, bias=False))
             self.semantic_net = nn.ModuleList(semantic_net)
         
+            # uncertainty semantic
+            self.beta_min = beta_min
+            self.layer_semantic_uncertainty = nn.Linear(self.geo_feat_dim, 1)
+
         # uncertainty color
         self.beta_min = beta_min
         self.layer_uncertainty = nn.Linear(self.geo_feat_dim, 1)
 
-        # uncertainty semantic
-        self.beta_min = beta_min
-        self.layer_semantic_uncertainty = nn.Linear(self.geo_feat_dim, 1)
         
 
     def semantic_postprocess_prob(self, mu, sigma):

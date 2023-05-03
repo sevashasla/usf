@@ -1036,6 +1036,8 @@ class Trainer(object):
                 # maybe do early stop. ONLY if use metrics
                 if not self.use_loss_as_metric and self.early_stop(self.stats["results"]["metrics"][-1][self.metric_to_monitor]):
                     print(f"[INFO] Early stopping at {epoch}")
+                    self.save_checkpoint(full=False, best=True)
+                    self.test(test_loader, write_video=True)
                     break
 
             if self.epoch % self.active_learning_interval == 0:
@@ -1142,7 +1144,8 @@ class Trainer(object):
             all_preds_depth = np.stack(all_preds_depth, axis=0)
             imageio.mimwrite(os.path.join(save_path, f'{name}_rgb.mp4'), all_preds, fps=10, quality=8, macro_block_size=1)
             # HARDCODE += 50, more pretty to watch!
-            imageio.mimwrite(os.path.join(save_path, f'{name}_uncert.mp4'), linear_transform(all_preds_uncert) + 50, fps=10, quality=8, macro_block_size=1)
+            to_video_uncert = linear_transform(all_preds_uncert) + 50
+            imageio.mimwrite(os.path.join(save_path, f'{name}_uncert.mp4'), to_video_uncert, fps=10, quality=8, macro_block_size=1)
             imageio.mimwrite(os.path.join(save_path, f'{name}_depth.mp4'), all_preds_depth, fps=10, quality=8, macro_block_size=1)
             to_log_videos = {
                 "video/rgb": wandb.Video(os.path.join(save_path, f'{name}_rgb.mp4'), format="mp4"),
@@ -1150,13 +1153,25 @@ class Trainer(object):
                 "video/depth": wandb.Video(os.path.join(save_path, f'{name}_depth.mp4'), format="mp4"),
             }
             if self.use_semantic:
-                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), self.sem_colormap[all_preds_smntc], fps=10, quality=8, macro_block_size=1)
-                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), linear_transform(all_preds_semantic_uncert) + 50, fps=10, quality=8, macro_block_size=1)
+                to_video_semantic = self.sem_colormap[all_preds_smntc]
+                to_video_smntc_uncert = linear_transform(all_preds_semantic_uncert) + 50
+                # concat together
+                to_reshape = list(all_preds.shape)
+                to_reshape[-2] = -1
+                concated_rgb_smntc = np.stack([all_preds, to_video_semantic], axis=2).reshape(*to_reshape)
+                concated_uncert = np.stack([np.repeat(to_video_uncert, 3, -1), np.repeat(to_video_smntc_uncert, 3, -1)], axis=2).reshape(*to_reshape)
+                concated = np.hstack([concated_rgb_smntc, concated_uncert])
+                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), to_video_semantic, fps=10, quality=8, macro_block_size=1)
+                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), to_video_smntc_uncert, fps=10, quality=8, macro_block_size=1)
+                imageio.mimwrite(os.path.join(save_path, f'{name}_concated.mp4'), concated, fps=10, quality=8, macro_block_size=1)
+                
                 to_log_videos = {
                     **to_log_videos,
                     "video/semantic": wandb.Video(os.path.join(save_path, f'{name}_smntc.mp4'), format="mp4"),
                     "video/semantic_uncert": wandb.Video(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), format="mp4"),
+                    "video/concated": wandb.Video(os.path.join(save_path, f'{name}_concated.mp4'), format="mp4"),
                 }
+
             if not self.opt.no_wandb:
                 wandb.log(to_log_videos)
 
@@ -1342,8 +1357,12 @@ class Trainer(object):
                 
                 # also count mean uncertainty
                 uncert_mean.append(preds_uncert.mean().item())
-                uncert_semantic_mean.append(preds_uncert_smntc.mean().item())
-                max_mu.append(preds_smntc.max().item())
+                if self.use_semantic:
+                    uncert_semantic_mean.append(preds_uncert_smntc.mean().item())
+                    max_mu.append(preds_smntc.max().item())
+                else:
+                    uncert_semantic_mean.append(-1.0)
+                    max_mu.append(-1.0)
                 
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 256.0) # TODO not hardcode?
             self.scaler.step(self.optimizer)
@@ -1373,11 +1392,12 @@ class Trainer(object):
         if self.ema is not None:
             self.ema.update()
 
-        wandb.log({
-            "uncert/uncert_mean": np.mean(uncert_mean),
-            "uncert/uncert_semantic_mean": np.mean(uncert_semantic_mean),
-            "uncert/max_mu": np.mean(max_mu),
-        })
+        if not self.opt.no_wandb:
+            wandb.log({
+                "uncert/uncert_mean": np.mean(uncert_mean),
+                "uncert/uncert_semantic_mean": np.mean(uncert_semantic_mean),
+                "uncert/max_mu": np.mean(max_mu),
+            })
         
         average_loss = total_loss / self.local_step
         self.stats["loss"].append(average_loss)
