@@ -50,11 +50,11 @@ if __name__ == '__main__':
     parser.add_argument('--update_extra_interval', type=int, default=16, help="iter interval to update extra status (only valid when using --cuda_ray)")
     parser.add_argument('--max_ray_batch', type=int, default=4096, help="batch size of rays at inference to avoid OOM (only valid when NOT using --cuda_ray)")
     parser.add_argument('--patch_size', type=int, default=1, help="[experimental] render patches in training, so as to apply LPIPS loss. 1 means disabled, use [64, 32, 16] to enable")
-    parser.add_argument('--lambd', type=float, default=1.0, help="coeff for losses")
+    parser.add_argument('--lambd', type=float, default=0.0, help="coeff for semantic loss")
     parser.add_argument('--save_interval', type=int, default=10, help="how often to save")
     parser.add_argument('--use_loss_as_metric', action='store_true', help="")
     
-
+    
     ### network backbone options
     parser.add_argument('--fp16', action='store_true', help="use amp mixed precision training")
     parser.add_argument('--ff', action='store_true', help="use fully-fused MLP")
@@ -93,7 +93,7 @@ if __name__ == '__main__':
     # uncertrainty
     parser.add_argument('--alpha_uncert', type=float, default=0.01, help="coeff inside RGBUncertaintyLoss")
     parser.add_argument('--beta_min', type=float, default=0.01, help="beta_min in NeRFNetwork, min of uncertainty")
-    parser.add_argument('--omega', type=float, default=1.0, help="weight of RGBUncertaintyLoss")
+    parser.add_argument('--omega', type=float, default=0.0, help="weight of RGBUncertaintyLoss")
     parser.add_argument('--use_uncert', action="store_true", help="use and predict the semantic labels")
     parser.add_argument('--use_semantic_uncert', action="store_true", help="use and predict the semantic labels")
 
@@ -148,6 +148,7 @@ if __name__ == '__main__':
     parser.add_argument('--path_to_save_tm', default="", type=str, help="where to store json with rendering time")
 
     # wandb
+    parser.add_argument('--project', type=str, default="ngp_with_semantic_nerf")
     parser.add_argument('--group', type=str)
     parser.add_argument('--resume', action="store_true")
     parser.add_argument('--no_wandb', action="store_true")
@@ -314,7 +315,7 @@ if __name__ == '__main__':
             print(f"[INFO] RESUME: {opt.resume}")
             if not opt.no_wandb:
                 wandb.init(
-                    project="ngp_with_semantic_nerf",
+                    project=opt.project,
                     group=opt.group,
                     name=f"semantic_ngp: {os.path.basename(opt.workspace)}",
                     config={**vars(opt), "mode": "semantic_ngp"},

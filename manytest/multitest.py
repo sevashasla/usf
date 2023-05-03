@@ -44,11 +44,16 @@ class NeRFRunner:
 
     @classmethod
     def prepare_config(cls, config, **kwargs):
+        # add common
+        for k, v in kwargs["common"].items():
+            config[k] = v
+
+        # other preparations
         workspace = config.pop("name", f"{kwargs['place']}_{kwargs['sequence']}_{kwargs['w']}_{kwargs['h']}_{kwargs['i']}")
         config["workspace"] = f"{cls.store_result}/{workspace}"
         config["datapath"] = kwargs['datapath']
         config["group"] = kwargs['group']
-        config.setdefault("eval_interval", config["epochs"] // 5)
+        config['project'] = kwargs['project']
 
     def prepare_launch(self):
         other_params = deepcopy(self.params)
@@ -71,13 +76,13 @@ class SemanticNgpRunner(NeRFRunner):
         "fp16": True,
         "scale": 0.5, 
         "bound": 3,
-        "epochs": 100,
+        "epochs": 5000,
         "max_ray_batch": 4096,
-        "num_rays": 512,
-        "num_steps": 96,
-        "eval_interval": 100,
-        "eval_ratio": 0.1,
-        "lambd": 0.01,
+        "num_rays": 1024,
+        "num_steps": 512,
+        "eval_interval": 50,
+        "video_interval": 100,
+        "save_interval": 50
     }
     start = None
     store_result = None
@@ -88,20 +93,20 @@ class SemanticNgpRunner(NeRFRunner):
         self.params = self.change_default(self.default_params, self.config)
         self.launch = self.prepare_launch()
 
-
 class TorchNgpRunner(NeRFRunner):
     default_params = {
         "fp16": True,
         "scale": 0.5, 
         "bound": 3,
-        "epochs": 100,
+        "epochs": 5000,
         "max_ray_batch": 4096,
-        "num_rays": 512,
-        "num_steps": 96,
-        "eval_interval": 100,
-        "eval_ratio": 0.1,
-        "cuda_ray": False,
+        "num_rays": 1024,
+        "num_steps": 512,
+        "eval_interval": 50,
+        "video_interval": 100,
+        "save_interval": 50
     }
+
     start = None
     store_result = None
 
@@ -129,6 +134,7 @@ def main():
     with open(args.path) as f:
         exp_configs = yaml.safe_load(f)
 
+    project  = exp_configs['project']
     dataset_dir = exp_configs['dataset_dir']
     group = exp_configs['name']
     continue_on_fail = exp_configs['continue_on_fail']
@@ -144,28 +150,29 @@ def main():
     SemanticNgpRunner.store_result = os.path.join(exp_configs["store_result"]["semantic_ngp"], group)
     TorchNgpRunner.store_result = os.path.join(exp_configs["store_result"]["torch_ngp"], group)
 
-    
+    runners = []
     for exp in exp_configs["experiments"]:
         # prepare the experiment
         w, h = exp["w"], exp["h"]
         need_transforms = exp.get("need_transforms", True)
         place = exp["place"]
         sequence = exp["sequence"]
+        common = exp.get("common", {}) # common features
         scene_file = os.path.join(exp_configs["scene_dir"], place)
         datapath = os.path.join(dataset_dir, place, sequence)
         if need_transforms:
             create_transforms(convert_script_path, datapath, w=w, h=h)
 
-        runners = []
         for i, torch_ngp_exp_config in enumerate(exp.get("torch_ngp", [])):
             config = deepcopy(torch_ngp_exp_config)
             if config is None:
                 continue
             TorchNgpRunner.prepare_config(
                 config, 
+                common=common, 
                 datapath=datapath,
                 place=place, sequence=sequence,
-                w=w, h=h, group=group, i=i,
+                w=w, h=h, group=group, i=i, project=project,
             )
             if TorchNgpRunner.already_exists(config) and not config.pop("do_run", False): # also delete do_run!
                 continue
@@ -177,24 +184,26 @@ def main():
                 continue
             SemanticNgpRunner.prepare_config(
                 config, 
+                common=common, 
                 datapath=datapath,
                 place=place, sequence=sequence,
                 w=w, h=h, scene_file=scene_file,
-                group=group, i=i,
+                group=group, i=i, project=project,
             )
             if SemanticNgpRunner.already_exists(config) and not config.pop("do_run", False): # also delete do_run!
                 continue
             runners.append(SemanticNgpRunner(config))
 
-        # start multithreading here
-        with ThreadPoolExecutor(max_workers=len(gpus)) as executor:
-            all_result_runs = [] # features
-            for r in runners:
-                all_result_runs.append(executor.submit(r.run, gpus))
-            for result_run in all_result_runs:
-                if result_run.result() != 0 and not continue_on_fail:
-                    return
-        # end multithreading here
+    # start multithreading here
+    print(f"[INFO] Total: {len(runners)} runs")
+    with ThreadPoolExecutor(max_workers=len(gpus)) as executor:
+        all_result_runs = [] # features
+        for r in runners:
+            all_result_runs.append(executor.submit(r.run, gpus))
+        for result_run in all_result_runs:
+            if result_run.result() != 0 and not continue_on_fail:
+                return
+    # end multithreading here
 
 if __name__ == "__main__":
     main()
