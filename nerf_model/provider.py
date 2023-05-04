@@ -104,7 +104,7 @@ def rand_poses(size, device, radius=1, theta_range=[np.pi/3, 2*np.pi/3], phi_ran
 
 
 class NeRFDataset:
-    def __init__(self, opt, device, type='train', downscale=1, n_test=100, tvh_indexer=None, semantic_remap=None):
+    def __init__(self, opt, device, type='train', downscale=1, n_video=100, tvh_indexer=None, semantic_remap=None):
         super().__init__()
         
         self.opt = opt
@@ -150,12 +150,12 @@ class NeRFDataset:
         # read images
         frames = transform["frames"]
         
-        # for colmap, manually interpolate a test set.
-        if self.mode == 'colmap' and type == 'test':
+        # for colmap, manually interpolate a video set.
+        if self.type == 'video':
             if self.opt.video_mode == 1:
-                colmap_test = self._create_colmap_test(frames, n_test)
+                colmap_test = self._create_poses_to_video(frames, n_video)
             elif self.opt.video_mode == 2:
-                colmap_test = self._create_colmap_test2(frames, n_test)
+                colmap_test = self._create_poses_to_video2(frames, n_video)
             self.poses = colmap_test['poses']
             self.images = colmap_test['images']
             self.semantic_images = colmap_test['semantic_images']
@@ -171,12 +171,13 @@ class NeRFDataset:
             # for colmap, manually split a valid set (the first frame).
             if self.mode == 'colmap':
                 if type == 'train':
-                    train_idx, val_idx, holdout_idx = self._split(len(frames))
+                    train_idx, val_idx, holdout_idx, test_idx = self._split(len(frames))
 
                     self.tvh_indexer = {
                         "train_idx": train_idx,
                         "val_idx": val_idx,
                         "holdout_idx": holdout_idx,
+                        "test_idx": test_idx, 
                     }
                 
                     frames = apply_sparse(opt, [frames[i] for i in self.tvh_indexer['train_idx']])
@@ -184,6 +185,8 @@ class NeRFDataset:
                     frames = [frames[i] for i in self.tvh_indexer['val_idx']]
                 elif type == 'holdout':
                     frames = [frames[i] for i in self.tvh_indexer['holdout_idx']]
+                elif type == 'test':
+                    frames = [frames[i] for i in self.tvh_indexer['test_idx']]
                 # else 'all' or 'trainval' : use all frames
             
             # finally load images
@@ -256,6 +259,7 @@ class NeRFDataset:
         train_size = maybe_ratio(self.opt.train_ratio)
         val_size = maybe_ratio(self.opt.eval_ratio)
         holdout_size = maybe_ratio(self.opt.holdout_ratio)
+        test_size = maybe_ratio(self.opt.test_ratio)
 
         # generate indices
         np.random.seed(random_state)
@@ -263,9 +267,9 @@ class NeRFDataset:
         train_ids = all_ids[:train_size]
         val_ids = all_ids[train_size:train_size + val_size]
         holdout_ids = all_ids[train_size + val_size:train_size + val_size + holdout_size]
-        return train_ids, val_ids, holdout_ids
+        test_ids = all_ids[train_size + val_size + holdout_size:train_size + val_size + holdout_size + test_size]
+        return train_ids, val_ids, holdout_ids, test_ids
     
-
     def _set_mode(self):
         # auto-detect transforms.json and split mode.
         if os.path.exists(os.path.join(self.root_path, 'transforms.json')):
@@ -388,7 +392,7 @@ class NeRFDataset:
             raise NotImplementedError(f'unknown dataset mode: {self.mode}')
         return transform
 
-    def _create_colmap_test(self, frames, n_test):
+    def _create_poses_to_video(self, frames, n_video):
         # choose two random poses, and interpolate between.
         f0, f1 = np.random.choice(frames, 2, replace=False)
         pose0 = nerf_matrix_to_ngp(np.array(f0['transform_matrix'], dtype=np.float32), scale=self.scale, offset=self.offset) # [4, 4]
@@ -397,8 +401,8 @@ class NeRFDataset:
         slerp = Slerp([0, 1], rots)
 
         poses = []
-        for i in range(n_test + 1):
-            ratio = np.sin(((i / n_test) - 0.5) * np.pi) * 0.5 + 0.5
+        for i in range(n_video + 1):
+            ratio = np.sin(((i / n_video) - 0.5) * np.pi) * 0.5 + 0.5
             pose = np.eye(4, dtype=np.float32)
             pose[:3, :3] = slerp(ratio).as_matrix()
             pose[:3, 3] = (1 - ratio) * pose0[:3, 3] + ratio * pose1[:3, 3]
@@ -409,7 +413,7 @@ class NeRFDataset:
             "semantic_images": None, 
         }
 
-    def _create_colmap_test2(self, frames, n_test):
+    def _create_poses_to_video2(self, frames, n_video):
         # the new way of making test video
         poses = []
         pose0 = np.array([
@@ -420,7 +424,7 @@ class NeRFDataset:
         ], dtype=np.float32)
         pose0[:3, 3] = np.mean([np.array(f['transform_matrix'])[:3, 3] for f in frames], axis=0)
         pose0 = nerf_matrix_to_ngp(pose0, scale=self.scale, offset=self.offset) # [4, 4]
-        poses_per_axis = n_test
+        poses_per_axis = n_video
         step = np.pi * 2 / poses_per_axis
         
         # rotate over y

@@ -19,7 +19,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('path', type=str)
     parser.add_argument('--num_epoch', type=int, default=10)
-    parser.add_argument('--n_test', type=int, default=100)
+    parser.add_argument('--n_video', type=int, default=100)
     parser.add_argument('-O', action='store_true', help="equals --fp16 --cuda_ray --preload")
     parser.add_argument('--test', action='store_true', help="test mode")
     parser.add_argument('--workspace', type=str, default='workspace')
@@ -324,15 +324,13 @@ if __name__ == '__main__':
                     resume=opt.resume,
                 )
 
-            test_dataset = NeRFDataset(opt, device=device, type='test', semantic_remap=nerf_dataset.semantic_remap, n_test=opt.n_test)
+            test_dataset = NeRFDataset(opt, device=device, type='test', semantic_remap=nerf_dataset.semantic_remap, tvh_indexer=nerf_dataset.tvh_indexer)
+            video_dataset = NeRFDataset(opt, device=device, type='video', semantic_remap=nerf_dataset.semantic_remap, n_video=opt.n_video)
             test_loader = test_dataset.dataloader()
-            trainer.train(nerf_dataset, valid_dataset, test_dataset, opt.epochs, holdout_dataset)
-
-            # also test
-            if test_loader.has_gt:
-                trainer.evaluate(test_loader) # blender has gt, so evaluate it.
-            
-            trainer.test(test_loader, write_video=True) # test and save video
+            trainer.train(
+                nerf_dataset, valid_dataset, test_dataset, 
+                video_dataset, opt.epochs, holdout_dataset
+            )
             
             # trainer.save_mesh(resolution=256, threshold=10)
 

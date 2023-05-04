@@ -343,7 +343,6 @@ class SegmentationMeter:
             f"{prefix}/class_average_accuracy" : class_average_accuracy, 
         }
 
-
 class PSNRMeter:
     def __init__(self):
         self.V = 0
@@ -553,6 +552,8 @@ class EarlyStop:
             self.curr_occ = 0
 
     def __call__(self, new_res):
+        if new_res is None:
+            return True
         if len(self.metrics) == 0:
             self.metrics.append(new_res)
             return False
@@ -1032,9 +1033,16 @@ class Trainer(object):
 
     ### ------------------------------
 
-    def train(self, train_dataset, valid_dataset, test_dataset, max_epochs, holdout_dataset=None):
+    def train(
+            self, 
+            train_dataset, valid_dataset, test_dataset, 
+            video_dataset, 
+            max_epochs, 
+            holdout_dataset=None
+        ):
         valid_loader = valid_dataset.dataloader()
         test_loader = test_dataset.dataloader()
+        video_loader = video_dataset.dataloader()
         for epoch in range(self.epoch + 1, max_epochs + 1):
             train_loader = train_dataset.dataloader()
             # mark untrained region (i.e., not covered by any camera from the training dataset)
@@ -1058,16 +1066,19 @@ class Trainer(object):
                 if not self.use_loss_as_metric and self.early_stop(self.stats["results"]["metrics"][-1][self.metric_to_monitor]):
                     print(f"[INFO] Early stopping at {epoch}")
                     self.save_checkpoint(full=False, best=True)
-                    self.test(test_loader, write_video=True)
+                    self.test(video_loader, write_video=True)
                     break
 
             if self.epoch % self.opt.video_interval == 0:
-                self.test(test_loader, write_video=True)
+                self.test(video_loader, write_video=True)
 
             if (self.use_uncert or self.use_semantic_uncert) and self.epoch % self.active_learning_interval == 0:
                 print(f"[INFO] active learning at {epoch}")
                 self.active_learning(train_dataset, holdout_dataset)
                 print(f"[INFO] new train size {len(train_dataset):5}, new holdout size {len(holdout_dataset):5}")
+
+        if test_loader.has_gt:
+            self.evaluate(test_loader)
                 
     @torch.no_grad()
     def active_learning(self, train_dataset, holdout_dataset):

@@ -36,6 +36,7 @@ class NeRFRunner:
         print(f"[INFO] Starting {self.start} on {gpu}!")
         # print(f"Wanna run: python3 {self.start} {self.launch}")
         result = os.system(f'cd {path_from} && CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES="{gpu}," python3 {self.start} {self.launch}')
+        # result = os.system(f'sleep {1 + idx}')
         if result == 0:
             print(f"[INFO] END {self.start} {self.launch}") 
         else:
@@ -126,6 +127,14 @@ def create_transforms(python_script, path, w, h):
     os.system(f"python3 {python_script} --traj_file={traj_file} --out_file={out_file} -W={w} -H={h}")
 
 
+def make_split(python_script, datapath, train_ratio, eval_ratio, holdout_ratio, test_ratio):
+    '''
+    make split
+    '''
+    transform_file = os.path.join(datapath, "transforms.json")
+    os.system(f"python3 {python_script} --transform_file={transform_file} --train_ratio={train_ratio} --eval_ratio={eval_ratio} --holdout_ratio={holdout_ratio} --test_ratio={test_ratio}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--path", default="./manytest.yaml", help="path to yaml file")
@@ -139,6 +148,7 @@ def main():
     group = exp_configs['name']
     continue_on_fail = exp_configs['continue_on_fail']
     convert_script_path = exp_configs["convert_script_path"]
+    split_script_path = exp_configs["split_script_path"]
     gpus = exp_configs["gpu"]
     if not isinstance(gpus, list):
         gpus = [gpus]
@@ -162,6 +172,7 @@ def main():
         datapath = os.path.join(dataset_dir, place, sequence)
         if need_transforms:
             create_transforms(convert_script_path, datapath, w=w, h=h)
+            make_split(split_script_path, datapath, exp["train_ratio"], exp["eval_ratio"], exp["holdout_ratio"], exp["test_ratio"])
 
         for i, torch_ngp_exp_config in enumerate(exp.get("torch_ngp", [])):
             config = deepcopy(torch_ngp_exp_config)
@@ -176,6 +187,7 @@ def main():
             )
             if TorchNgpRunner.already_exists(config) and not config.pop("do_run", False): # also delete do_run!
                 continue
+            config.pop("do_run", True)
             runners.append(TorchNgpRunner(config))
 
         for i, semantic_ngp_exp_config in enumerate(exp.get("semantic_ngp", [])):
@@ -192,6 +204,7 @@ def main():
             )
             if SemanticNgpRunner.already_exists(config) and not config.pop("do_run", False): # also delete do_run!
                 continue
+            config.pop("do_run", True)
             runners.append(SemanticNgpRunner(config))
 
     # start multithreading here
