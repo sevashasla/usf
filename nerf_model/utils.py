@@ -552,7 +552,7 @@ class EarlyStop:
             self.curr_occ = 0
 
     def __call__(self, new_res):
-        if new_res is None:
+        if np.isnan(new_res):
             return True
         if len(self.metrics) == 0:
             self.metrics.append(new_res)
@@ -1053,7 +1053,8 @@ class Trainer(object):
             self.error_map = train_loader._data.error_map
         
             self.epoch = epoch
-            self.train_one_epoch(train_loader)
+            if not self.train_one_epoch(train_loader):
+                break
 
             if self.workspace is not None and self.local_rank == 0 and self.epoch % self.save_interval == 0:
                 self.save_checkpoint(full=True, best=False)
@@ -1405,22 +1406,26 @@ class Trainer(object):
                 loss = full_pred_train["loss"]
          
             self.scaler.scale(loss).backward()
-            with torch.no_grad():
-                # count grad
-                sum_grads = []
-                for p in self.model.parameters():
-                    if p.requires_grad:
-                        if p.grad is None:
-                            continue
-                        sum_grads.append(torch.abs(p.grad).mean().item())
-                if len(sum_grads) == 0:
-                    sum_grads = [0.0]
+            
+            # count grad
+            sum_grads = []
+            for p in self.model.parameters():
+                if p.requires_grad:
+                    sum_grads.append(torch.abs(p.grad).mean().item())
+            if len(sum_grads) == 0:
+                sum_grads = [0.0]
                 if not self.opt.no_wandb:
-                    wandb.log({"train/grad_norm": np.mean(sum_grads)})
-                
-                # also count mean uncertainty
+                    wandb.alert("Len of sum_grads is zero :(")
+            if not self.opt.no_wandb:
+                wandb.log({"train/grad_norm": np.mean(sum_grads)})
+    
+            # also count mean uncertainty
+            with torch.no_grad():
                 if self.use_uncert:
                     uncert_mean.append(preds_uncert.mean().item())
+                else:
+                    uncert_mean.append(-1.0)
+
                 if self.use_semantic_uncert:
                     uncert_semantic_mean.append(preds_uncert_smntc.mean().item())
                     max_mu.append(preds_smntc.max().item())
@@ -1436,6 +1441,9 @@ class Trainer(object):
                 self.lr_scheduler.step()
 
             loss_val = loss.item()
+            if np.isnan(loss_val) and not self.opt.no_wandb:
+                wandb.alert("Loss contains nans")
+                return False
             total_loss += loss_val
 
             if self.local_rank == 0:
@@ -1490,6 +1498,7 @@ class Trainer(object):
                 self.lr_scheduler.step()
 
         self.log(f"==> Finished Epoch {self.epoch}.")
+        return True
 
     def evaluate_one_epoch(self, loader, name=None):
         self.log(f"++> Evaluate at epoch {self.epoch} ...")
