@@ -160,7 +160,7 @@ class NeRFDataset:
             self.images = colmap_test['images']
             self.semantic_images = colmap_test['semantic_images']
             
-        elif self.mode == 'colmap' and type == 'train' and opt.load_saved:
+        elif self.mode == 'colmap' and self.type == 'train' and opt.load_saved:
             self.poses = []
             self.images = []
             self.semantic_images = []
@@ -170,7 +170,7 @@ class NeRFDataset:
         else:
             # for colmap, manually split a valid set (the first frame).
             if self.mode == 'colmap':
-                if type == 'train':
+                if self.type == 'train':
                     train_idx, val_idx, holdout_idx, test_idx = self._split(len(frames))
 
                     self.tvh_indexer = {
@@ -181,11 +181,11 @@ class NeRFDataset:
                     }
                 
                     frames = apply_sparse(opt, [frames[i] for i in self.tvh_indexer['train_idx']])
-                elif type == 'val':
+                elif self.type == 'val':
                     frames = [frames[i] for i in self.tvh_indexer['val_idx']]
-                elif type == 'holdout':
+                elif self.type == 'holdout':
                     frames = [frames[i] for i in self.tvh_indexer['holdout_idx']]
-                elif type == 'test':
+                elif self.type == 'test':
                     frames = [frames[i] for i in self.tvh_indexer['test_idx']]
                 # else 'all' or 'trainval' : use all frames
             
@@ -196,7 +196,7 @@ class NeRFDataset:
             self.semantic_images = loaded_images['semantic_images']
 
         ### spoil dataset
-        if type == 'train' and not opt.load_saved:
+        if self.type == 'train' and not opt.load_saved:
             if opt.pixel_denoising:
                 apply_pixel_denoise(opt, self.poses, self.images, self.semantic_images)
             if opt.region_denoising:
@@ -209,18 +209,23 @@ class NeRFDataset:
             if opt.visualise_save:
                 save_spoiled(opt, self.poses, self.images, self.semantic_images)
 
-        self.poses = torch.from_numpy(np.stack(self.poses, axis=0)) # [N, 4, 4]
-        if self.images is not None:
+        if len(self.poses) > 0:
+            self.poses = torch.from_numpy(np.stack(self.poses, axis=0)) # [N, 4, 4]
+
+        if self.images:
             self.images = torch.from_numpy(np.stack(self.images, axis=0)) # [N, H, W, C]
         
         # make semantic remap
-        if self.use_semantic and self.semantic_images:
+        if self.use_semantic and len(self.semantic_images) > 0:
             self.semantic_images = torch.from_numpy(np.stack(self.semantic_images, axis=0)) # [N, H, W]
             self.semantic_remap.remap(self.semantic_images, inplace=True)
             self.num_semantic_classes = len(self.semantic_remap.semantic_classes)
         
         # calculate mean radius of all camera poses
-        self.radius = self.poses[:, :3, 3].norm(dim=-1).mean(0).item()
+        if len(self.poses) > 0:
+            self.radius = self.poses[:, :3, 3].norm(dim=-1).mean(0).item()
+        else:
+            self.radius = 4.0
         #print(f'[INFO] dataset camera poses: radius = {self.radius:.4f}, bound = {self.bound}')
 
         # initialize error_map
@@ -267,7 +272,7 @@ class NeRFDataset:
         train_ids = all_ids[:train_size]
         val_ids = all_ids[train_size:train_size + val_size]
         holdout_ids = all_ids[train_size + val_size:train_size + val_size + holdout_size]
-        test_ids = all_ids[-test_size:] # take them from the end
+        test_ids = all_ids[-test_size - 1:] # take them from the end
         return train_ids, val_ids, holdout_ids, test_ids
     
     def _set_mode(self):
@@ -333,12 +338,13 @@ class NeRFDataset:
             images.append(image)
             if self.use_semantic:
                 semantic_images.append(semantic)
-
+        assign_none = lambda x: x if len(x) > 0 else None
+    
         return {
             "poses": poses, 
-            "images": images, 
-            "semantic_images": semantic_images, 
-            "depths": depths,
+            "images": assign_none(images), 
+            "semantic_images": assign_none(semantic_images), 
+            "depths": assign_none(depths),
         }
 
     def _load_intrinsics(self, transform, downscale):
@@ -360,14 +366,14 @@ class NeRFDataset:
     
         self.intrinsics = np.array([fl_x, fl_y, cx, cy])
     
-    def _load_transform(self, ):
+    def _load_transform(self):
         # load nerf-compatible format data.
         if self.mode == 'colmap':
             with open(os.path.join(self.root_path, 'transforms.json'), 'r') as f:
                 transform = json.load(f)
         elif self.mode == 'blender':
             # load all splits (train/valid/test), this is what instant-ngp in fact does...
-            if type == 'all':
+            if self.type == 'all':
                 transform_paths = glob.glob(os.path.join(self.root_path, '*.json'))
                 transform = None
                 for transform_path in transform_paths:
@@ -378,15 +384,19 @@ class NeRFDataset:
                         else:
                             transform['frames'].extend(tmp_transform['frames'])
             # load train and val split
-            elif type == 'trainval':
+            elif self.type == 'trainval':
                 with open(os.path.join(self.root_path, f'transforms_train.json'), 'r') as f:
                     transform = json.load(f)
                 with open(os.path.join(self.root_path, f'transforms_val.json'), 'r') as f:
                     transform_val = json.load(f)
                 transform['frames'].extend(transform_val['frames'])
+            elif self.type == 'video':
+                with open(os.path.join(self.root_path, f'transforms_val.json'), 'r') as f:
+                    transform = json.load(f) # need only intrinsics
+                transform['frames'] = []
             # only load one specified split
             else:
-                with open(os.path.join(self.root_path, f'transforms_{type}.json'), 'r') as f:
+                with open(os.path.join(self.root_path, f'transforms_{self.type}.json'), 'r') as f:
                     transform = json.load(f)
         else:
             raise NotImplementedError(f'unknown dataset mode: {self.mode}')

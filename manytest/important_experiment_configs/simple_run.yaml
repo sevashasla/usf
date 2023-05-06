@@ -1,0 +1,153 @@
+name: "simple-hyperparameters" # name of group in wandb
+project: "actsrf"
+place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
+sequences: ["Sequence_1", "Sequence_2"]
+scene_dir: "/mnt/hdd8/Datasets/Replica/semantic_info/"
+dataset_dir: "/mnt/hdd8/Datasets/Replica/"
+store_result: # where to store results
+  semantic_ngp: "/mnt/hdd8/skorokhodov_vs/results/semantic_ngp_results/"
+  torch_ngp: "/mnt/hdd8/skorokhodov_vs/results/torch-ngp_results"
+  semantic_nerf: "/mnt/hdd8/skorokhodov_vs/results/semantic_nerf_results"
+start: # start script
+  semantic_ngp: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/main_nerf.py"
+  torch_ngp: "/home/skorokhodov_vs/nerf/from_laba/torch-ngp/main_nerf.py"
+  semantic_nerf: "/home/skorokhodov_vs/nerf/from_laba/semantic_nerf/train_SSR_main_time_measure.py"
+
+convert_script_path: "/home/skorokhodov_vs/nerf/replica2nerf.py" # script to convert poses to nerf format
+continue_on_fail: False
+gpu: [0, 2]
+
+experiments:      
+  -
+    w: 640
+    h: 480
+    place: "room_0"
+    sequence: "Sequence_1"
+    need_transforms: False
+    semantic_ngp:
+      - 
+
+        save_interval: 50
+        eval_interval: 50
+        video_interval: 100
+
+        eval_ratio: 0.125
+        train_ratio: 0.625
+        video_mode: 2
+  -
+    w: 640
+    h: 480
+    place: "room_1"
+    sequence: "Sequence_1"
+    need_transforms: False
+    semantic_ngp:
+      - 
+
+        save_interval: 50
+        eval_interval: 50
+        video_interval: 100
+
+        eval_ratio: 0.125
+        train_ratio: 0.625
+        video_mode: 2
+  -
+    w: 640
+    h: 480
+    place: "room_2"
+    sequence: "Sequence_1"
+    need_transforms: False
+    semantic_ngp:
+      -
+ 
+        save_interval: 50
+        eval_interval: 50
+        video_interval: 100
+
+        eval_ratio: 0.125
+        train_ratio: 0.625
+        video_mode: 2
+
+  -
+    w: 640
+    h: 480
+    place: "office_0"
+    sequence: "Sequence_1"
+    need_transforms: False
+    semantic_ngp:
+      -
+ 
+        save_interval: 50
+        eval_interval: 50
+        video_interval: 100
+
+        eval_ratio: 0.125
+        train_ratio: 0.625
+        video_mode: 2
+
+  -
+    w: 640
+    h: 480
+    place: "office_1"
+    sequence: "Sequence_1"
+    need_transforms: False
+    semantic_ngp:
+      -
+ 
+        save_interval: 50
+        eval_interval: 50
+        video_interval: 100
+
+        eval_ratio: 0.125
+        train_ratio: 0.625
+        video_mode: 2
+
+  -
+    w: 640
+    h: 480
+    place: "office_2"
+    sequence: "Sequence_1"
+    need_transforms: False
+    semantic_ngp:
+      -
+ 
+        save_interval: 50
+        eval_interval: 50
+        video_interval: 100
+
+        eval_ratio: 0.125
+        train_ratio: 0.625
+        video_mode: 2
+    
+  -
+    w: 640
+    h: 480
+    place: "office_3"
+    sequence: "Sequence_1"
+    need_transforms: False
+    semantic_ngp:
+      -
+ 
+        save_interval: 50
+        eval_interval: 50
+        video_interval: 100
+
+        eval_ratio: 0.125
+        train_ratio: 0.625
+        video_mode: 2
+
+  -
+    w: 640
+    h: 480
+    place: "office_4"
+    sequence: "Sequence_1"
+    need_transforms: False
+    semantic_ngp:
+      -
+ 
+        save_interval: 50
+        eval_interval: 50
+        video_interval: 100
+
+        eval_ratio: 0.125
+        train_ratio: 0.625
+        video_mode: 2

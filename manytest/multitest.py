@@ -94,12 +94,13 @@ class SemanticNgpRunner(NeRFRunner):
         self.params = self.change_default(self.default_params, self.config)
         self.launch = self.prepare_launch()
 
+
 class TorchNgpRunner(NeRFRunner):
     default_params = {
         "fp16": True,
-        "scale": 0.5, 
-        "bound": 3,
-        "epochs": 5000,
+        "scale": 1.0, 
+        "bound": 4.5,
+        "epochs": 1500,
         "max_ray_batch": 4096,
         "num_rays": 1024,
         "num_steps": 512,

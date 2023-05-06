@@ -26,6 +26,6 @@ class TimeMeasure:
                 result[key] = np.mean(arr)
             return result
         else:
-            return np.mean(self.times[name])
+            return np.mean(self.times.get(name, [-1.0]))
         
     

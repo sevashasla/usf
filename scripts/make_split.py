@@ -34,7 +34,7 @@ class Splitter():
         train_ids = all_ids[:train_size]
         val_ids = all_ids[train_size:train_size + val_size]
         holdout_ids = all_ids[train_size + val_size:train_size + val_size + holdout_size]
-        test_ids = all_ids[-test_size:] # take them from the end
+        test_ids = all_ids[-test_size - 1:] # take them from the end
         return train_ids, val_ids, holdout_ids, test_ids
 
     def make_split(self):
@@ -58,7 +58,7 @@ class Splitter():
         for mode in transforms_dict:
             mode_file = deepcopy(not_frames)
             mode_file["frames"] = transforms_dict[mode]
-            to_save_path = os.path.join(dir_to_tr, f"{mode}.json")
+            to_save_path = os.path.join(dir_to_tr, f"transforms_{mode}.json")
             with open(to_save_path, "w") as f:
                 f.write(json.dumps(mode_file, indent=4))
 

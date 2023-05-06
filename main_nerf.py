@@ -31,6 +31,7 @@ if __name__ == '__main__':
     parser.add_argument('--eval_ratio', type=float, default=0.2)
     parser.add_argument('--train_ratio', type=float, default=None)
     parser.add_argument('--holdout_ratio', type=float, default=0.0)
+    parser.add_argument('--test_ratio', type=float, default=0.0)
     parser.add_argument('--total_num_classes', type=int, default=101) # from replica dataset
     parser.add_argument('--metric_to_monitor', type=str, default="lpips") # from replica dataset
 
@@ -302,14 +303,11 @@ if __name__ == '__main__':
                 tvh_indexer=nerf_dataset.tvh_indexer
             )
 
-            if np.allclose(opt.holdout_ratio, 0.0):
-                holdout_dataset = None
-            else:    
-                holdout_dataset = NeRFDataset(
-                    opt, device=device, type='holdout', downscale=opt.downscale, 
-                    semantic_remap=nerf_dataset.semantic_remap,
-                    tvh_indexer=nerf_dataset.tvh_indexer
-                )
+            holdout_dataset = NeRFDataset(
+                opt, device=device, type='holdout', downscale=opt.downscale, 
+                semantic_remap=nerf_dataset.semantic_remap,
+                tvh_indexer=nerf_dataset.tvh_indexer
+            )
 
             print(f"[INFO] MAX_EPOCH: {opt.epochs}, ITERS: {iters}")
             print(f"[INFO] RESUME: {opt.resume}")

@@ -1079,7 +1079,7 @@ class Trainer(object):
                 print(f"[INFO] new train size {len(train_dataset):5}, new holdout size {len(holdout_dataset):5}")
 
         if test_loader.has_gt:
-            self.evaluate(test_loader)
+            self.evaluate(test_loader, mode="test")
                 
     @torch.no_grad()
     def active_learning(self, train_dataset, holdout_dataset):
@@ -1099,8 +1099,8 @@ class Trainer(object):
         train_dataset.append(holdout_dataset, new_k)
         holdout_dataset.drop(new_k)
 
-    def evaluate(self, loader, name=None):
-        self.evaluate_one_epoch(loader, name)
+    def evaluate(self, loader, name=None, mode="eval"):
+        self.evaluate_one_epoch(loader, name, mode)
 
     def test(self, loader, save_path=None, name=None, write_video=True):
         if save_path is None:
@@ -1500,7 +1500,7 @@ class Trainer(object):
         self.log(f"==> Finished Epoch {self.epoch}.")
         return True
 
-    def evaluate_one_epoch(self, loader, name=None):
+    def evaluate_one_epoch(self, loader, name=None, mode="eval"):
         self.log(f"++> Evaluate at epoch {self.epoch} ...")
 
         if name is None:
@@ -1589,14 +1589,14 @@ class Trainer(object):
                         dmetric.update(preds_depth, ...)
 
                     # save image
-                    save_path = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_rgb.png')
-                    save_path_depth = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_depth.png')
+                    save_path = os.path.join(self.workspace, mode, f'{name}_{self.local_step:04d}_rgb.png')
+                    save_path_depth = os.path.join(self.workspace, mode, f'{name}_{self.local_step:04d}_depth.png')
                     if self.use_uncert:
-                        save_path_uncert = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_uncert.png')
+                        save_path_uncert = os.path.join(self.workspace, mode, f'{name}_{self.local_step:04d}_uncert.png')
                     if self.use_semantic:
-                        save_path_smntc = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_smntc.png')
+                        save_path_smntc = os.path.join(self.workspace, mode, f'{name}_{self.local_step:04d}_smntc.png')
                     if self.use_semantic_uncert:
-                        save_path_smntc_uncert = os.path.join(self.workspace, 'validation', f'{name}_{self.local_step:04d}_smntc_uncert.png')
+                        save_path_smntc_uncert = os.path.join(self.workspace, mode, f'{name}_{self.local_step:04d}_smntc_uncert.png')
 
                     #self.log(f"==> Saving validation image to {save_path}")
                     if self.save_eval_images:
@@ -1660,13 +1660,13 @@ class Trainer(object):
             # calculate metrics
             metrics_to_report = {}
             for metric in self.metrics:    
-                metrics_to_report.update(metric.wandb_log("eval"))
+                metrics_to_report.update(metric.wandb_log(mode))
                 self.log(metric.report(), style="blue")
             for smetric in self.segmentation_metrics:
-                metrics_to_report.update(smetric.wandb_log("eval"))
+                metrics_to_report.update(smetric.wandb_log(mode))
                 self.log(smetric.report(), style="blue")
             for dmetric in self.depth_metrics:
-                metrics_to_report.update(dmetric.wandb_log("eval"))
+                metrics_to_report.update(dmetric.wandb_log(mode))
                 self.log(dmetric.report(), style="blue")
             self._clear_metrics()
             if not self.opt.no_wandb:
