@@ -391,9 +391,8 @@ class NeRFDataset:
                     transform_val = json.load(f)
                 transform['frames'].extend(transform_val['frames'])
             elif self.type == 'video':
-                with open(os.path.join(self.root_path, f'transforms_val.json'), 'r') as f:
-                    transform = json.load(f) # need only intrinsics
-                transform['frames'] = []
+                with open(os.path.join(self.root_path, f'transforms_train.json'), 'r') as f:
+                    transform = json.load(f)
             # only load one specified split
             else:
                 with open(os.path.join(self.root_path, f'transforms_{self.type}.json'), 'r') as f:
@@ -417,6 +416,7 @@ class NeRFDataset:
             pose[:3, :3] = slerp(ratio).as_matrix()
             pose[:3, 3] = (1 - ratio) * pose0[:3, 3] + ratio * pose1[:3, 3]
             poses.append(pose)
+
         return {
             "poses": poses, 
             "images": None, 

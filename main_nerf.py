@@ -60,6 +60,7 @@ if __name__ == '__main__':
     parser.add_argument('--fp16', action='store_true', help="use amp mixed precision training")
     parser.add_argument('--ff', action='store_true', help="use fully-fused MLP")
     parser.add_argument('--tcnn', action='store_true', help="use TCNN backend")
+    parser.add_argument('--first_encoding', type=str, choices=["hashgrid", "sphere_harmonics"], default="hashgrid", help="type of encoding for coordinates")
 
     ### dataset options
     parser.add_argument('--color_space', type=str, default='srgb', help="Color space, supports (linear, srgb)")
@@ -198,7 +199,7 @@ if __name__ == '__main__':
     if opt.test:
         model = NeRFNetwork(
             opt, 
-            encoding="hashgrid",
+            encoding=opt.first_encoding,
             bound=opt.bound,
             cuda_ray=opt.cuda_ray,
             density_scale=1,
@@ -243,7 +244,7 @@ if __name__ == '__main__':
 
         model = NeRFNetwork(
             opt, 
-            encoding="hashgrid",
+            encoding=opt.first_encoding,
             bound=opt.bound,
             cuda_ray=opt.cuda_ray,
             density_scale=1,

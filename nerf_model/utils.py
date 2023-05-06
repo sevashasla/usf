@@ -578,8 +578,8 @@ class Trainer(object):
                  optimizer=None, # optimizer
                  ema_decay=None, # if use EMA, set the decay
                  lr_scheduler=None, # scheduler
-                 lambd=1.0, # coeff for semantic loss
-                 omega=1.0, # coeff in for uncertainty loss
+                 lambd=0.0, # coeff for semantic loss
+                 omega=0.0, # coeff in for uncertainty loss
                  metrics=[], # metrics for evaluation, if None, use val_loss to measure performance, else use the first metric.
                  segmentation_metrics=[],
                  depth_metrics=[],
@@ -870,7 +870,7 @@ class Trainer(object):
         # they use weighted loss, but set lambda_ce = 1 it's ok
         losses_to_log = {"train/loss_rgb": loss.item(), "train/loss_smntc": loss_smntc.item(), "train/loss_uncert": loss_uncert.item()}
 
-        loss = (1 - self.omega) * loss + self.lambd * loss_smntc + self.omega * loss_uncert
+        loss = (1.0 - self.omega) * loss + self.lambd * loss_smntc + self.omega * loss_uncert
         if not self.opt.no_wandb:
             wandb.log({**losses_to_log, "train/sum_loss": loss.item()})
         # loss = self.lambd * loss_smntc + self.omega * loss_uncert
@@ -1080,6 +1080,8 @@ class Trainer(object):
 
         if test_loader.has_gt:
             self.evaluate(test_loader, mode="test")
+        # and make a video
+        self.test(video_loader, write_video=True)
                 
     @torch.no_grad()
     def active_learning(self, train_dataset, holdout_dataset):

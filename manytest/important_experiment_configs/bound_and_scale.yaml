@@ -37,16 +37,15 @@ experiments:
 
     semantic_ngp:
       - 
-        epochs: 2
-        bound: 4.5
+        bound: 6.0
         scale: 1.0
 
       - 
-        bound: 2.25
+        bound: 3.0
         scale: 0.5
 
       - 
-        bound: 1.5
+        bound: 2.0
         scale: 0.33
 
 ### EXPERIMENT 2 ###
@@ -55,7 +54,7 @@ experiments:
     h: 480
     place: "office_0"
     sequence: "Sequence_1"
-    need_transforms: False
+    need_transforms: True
     
     eval_ratio: 0.125
     train_ratio: 0.625
@@ -67,15 +66,15 @@ experiments:
 
     semantic_ngp:
       - 
-        bound: 4.5
+        bound: 6.0
         scale: 1.0
 
       - 
-        bound: 2.25
+        bound: 3.0
         scale: 0.5
 
       - 
-        bound: 1.5
+        bound: 2.0
         scale: 0.33
 
 ### EXPERIMENT 3 ###
@@ -84,7 +83,7 @@ experiments:
     h: 480
     place: "office_2"
     sequence: "Sequence_1"
-    need_transforms: False
+    need_transforms: True
 
     eval_ratio: 0.125
     train_ratio: 0.625
@@ -96,13 +95,13 @@ experiments:
 
     semantic_ngp:
       - 
-        bound: 4.5
+        bound: 6.0
         scale: 1.0
 
       - 
-        bound: 2.25
+        bound: 3.0
         scale: 0.5
 
       - 
-        bound: 1.5
+        bound: 2.0
         scale: 0.33

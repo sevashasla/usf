@@ -35,6 +35,7 @@ class NeRFNetwork(NeRFRenderer):
         self.use_uncert = opt.use_uncert
         self.use_semantic = opt.use_semantic
         self.use_semantic_uncert = opt.use_semantic_uncert
+        self.first_encoding = encoding
 
         self.num_semantic_classes = num_semantic_classes
         self.Ngen = Ngen
@@ -172,7 +173,10 @@ class NeRFNetwork(NeRFRenderer):
         # d: [N, 3], nomalized in [-1, 1]
 
         # sigma
-        x = self.encoder(x, bound=self.bound)
+        if self.first_encoding == "hashgrid":
+            x = self.encoder(x, bound=self.bound)
+        else:
+            x = self.encoder(x)
 
         h = x
         for l in range(self.num_layers):
@@ -227,7 +231,11 @@ class NeRFNetwork(NeRFRenderer):
     def density(self, x):
         # x: [N, 3], in [-bound, bound]
 
-        x = self.encoder(x, bound=self.bound)
+        if self.first_encoding == "hashgrid":
+            x = self.encoder(x, bound=self.bound)
+        else:
+            x = self.encoder(x)
+
         h = x
         for l in range(self.num_layers):
             h = self.sigma_net[l](h)
