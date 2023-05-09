@@ -237,7 +237,7 @@ if __name__ == '__main__':
     
     else:
 
-        nerf_dataset = NeRFDataset(opt, device=device, type='train', downscale=opt.downscale)
+        nerf_dataset = NeRFDataset(opt, device=device, type='train', downscale=opt.downscale, semantic_remap=SemanticRemap(opt.semantic_remap) if opt.semantic_remap else None, )
 
         num_semantic_classes = nerf_dataset.num_semantic_classes     
         train_loader = nerf_dataset.dataloader()

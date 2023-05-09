@@ -216,7 +216,7 @@ class NeRFDataset:
             self.images = torch.from_numpy(np.stack(self.images, axis=0)) # [N, H, W, C]
         
         # make semantic remap
-        if self.use_semantic and len(self.semantic_images) > 0:
+        if self.use_semantic and self.semantic_images and len(self.semantic_images) > 0:
             self.semantic_images = torch.from_numpy(np.stack(self.semantic_images, axis=0)) # [N, H, W]
             self.semantic_remap.remap(self.semantic_images, inplace=True)
             self.num_semantic_classes = len(self.semantic_remap.semantic_classes)
@@ -323,7 +323,7 @@ class NeRFDataset:
 
             ### semantic read
             if self.use_semantic:
-                semantic = cv2.imread(semantic_path, cv2.IMREAD_UNCHANGED)
+                semantic = cv2.imread(semantic_path, 0)
                 if semantic.shape[0] != self.H or semantic.shape[1] != self.W:
                     semantic = cv2.resize(semantic, (self.W, self.H), interpolation=cv2.INTER_NEAREST)
 

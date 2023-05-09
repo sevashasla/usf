@@ -680,7 +680,7 @@ class Trainer(object):
             self.ema = None
 
         if early_stop is None:
-            early_stop = EarlyStop(alpha=1e-3, relative=False)
+            early_stop = EarlyStop(alpha=5e-3, relative=False)
         self.early_stop = early_stop
 
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.fp16)
@@ -1426,6 +1426,8 @@ class Trainer(object):
          
             self.scaler.scale(loss).backward()
             
+            # [DEBUG]
+
             # count grad
             sum_grads = []
             for p in self.model.parameters():
@@ -1438,19 +1440,19 @@ class Trainer(object):
             if not self.opt.no_wandb:
                 wandb.log({"train/grad_norm": np.mean(sum_grads)})
     
-            # also count mean uncertainty
-            with torch.no_grad():
-                if self.use_uncert:
-                    uncert_mean.append(preds_uncert.mean().item())
-                else:
-                    uncert_mean.append(-1.0)
+            # # also count mean uncertainty
+            # with torch.no_grad():
+            #     if self.use_uncert:
+            #         uncert_mean.append(preds_uncert.mean().item())
+            #     else:
+            #         uncert_mean.append(-1.0)
 
-                if self.use_semantic_uncert:
-                    uncert_semantic_mean.append(preds_uncert_smntc.mean().item())
-                    max_mu.append(preds_smntc.max().item())
-                else:
-                    uncert_semantic_mean.append(-1.0)
-                    max_mu.append(-1.0)
+            #     if self.use_semantic_uncert:
+            #         uncert_semantic_mean.append(preds_uncert_smntc.mean().item())
+            #         max_mu.append(preds_smntc.max().item())
+            #     else:
+            #         uncert_semantic_mean.append(-1.0)
+            #         max_mu.append(-1.0)
                 
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 256.0) # TODO not hardcode?
             self.scaler.step(self.optimizer)

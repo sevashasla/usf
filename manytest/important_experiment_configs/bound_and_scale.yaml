@@ -1,4 +1,4 @@
-name: "TEST-hyper-bound-and-scale" # name of group in wandb
+name: "TEST-2-hyper-bound-and-scale" # name of group in wandb
 project: "actsrf"
 place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
 sequences: ["Sequence_1", "Sequence_2"]
@@ -16,37 +16,42 @@ start: # start script
 convert_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/replica2nerf.py" # script to convert poses to nerf format
 split_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/make_split.py"
 continue_on_fail: False
-gpu: [0, 1]
+gpu: [0]
 
 experiments:
-### EXPERIMENT 1 ###  
+### EXPERIMENT 1 ###
+
   -
     w: 640
     h: 480
     place: "room_1"
     sequence: "Sequence_1"
-    need_transforms: True
+    need_transforms: False
     
-    eval_ratio: 0.125
-    train_ratio: 0.625
+    eval_ratio: 0.100
+    train_ratio: 0.800
     holdout_ratio: 0.0
-    test_ratio: 0.250
+    test_ratio: 0.100
 
     common: 
       video_mode: 2
+      max_ray_batch: 4096
+      lr: 0.001
 
     semantic_ngp:
       - 
-        bound: 6.0
+        bound: 2.33
+        scale: 0.33
+
+      - 
+        bound: 7.0
         scale: 1.0
 
       - 
-        bound: 3.0
+        name: "again_10"
+        bound: 3.5
         scale: 0.5
-
-      - 
-        bound: 2.0
-        scale: 0.33
+        resume: True
 
 ### EXPERIMENT 2 ###
   -
@@ -56,52 +61,53 @@ experiments:
     sequence: "Sequence_1"
     need_transforms: True
     
-    eval_ratio: 0.125
-    train_ratio: 0.625
+    eval_ratio: 0.100
+    train_ratio: 0.800
     holdout_ratio: 0.0
-    test_ratio: 0.250
+    test_ratio: 0.100
 
     common: 
       video_mode: 2
+      max_ray_batch: 4096
+      lr: 0.001
 
     semantic_ngp:
       - 
-        bound: 6.0
-        scale: 1.0
-
-      - 
-        bound: 3.0
-        scale: 0.5
-
-      - 
-        bound: 2.0
+        bound: 2.33
         scale: 0.33
 
-### EXPERIMENT 3 ###
-  -
-    w: 640
-    h: 480
-    place: "office_2"
-    sequence: "Sequence_1"
-    need_transforms: True
-
-    eval_ratio: 0.125
-    train_ratio: 0.625
-    holdout_ratio: 0.0
-    test_ratio: 0.250
-
-    common: 
-      video_mode: 2
-
-    semantic_ngp:
       - 
-        bound: 6.0
+        bound: 3.5
+        scale: 0.5
+      
+      - 
+        bound: 7.0
         scale: 1.0
 
-      - 
-        bound: 3.0
-        scale: 0.5
 
-      - 
-        bound: 2.0
-        scale: 0.33
+# ### EXPERIMENT 3 ###
+#   -
+#     w: 640
+#     h: 480
+#     place: "office_2"
+#     sequence: "Sequence_1"
+#     need_transforms: True
+    
+#     eval_ratio: 0.100
+#     train_ratio: 0.800
+#     holdout_ratio: 0.0
+#     test_ratio: 0.100
+
+#     common: 
+#       video_mode: 2
+#       max_ray_batch: 4096
+#       lr: 0.001
+
+#     semantic_ngp:
+#       - 
+#         bound: 3.5
+#         scale: 0.5
+
+#        - 
+#         bound: 7.0
+#         scale: 1.0

@@ -8,6 +8,9 @@ class SemanticRemap:
             self.direct_remap_dict = None
             self.inv_remap_dict = None
         else:
+            if isinstance(list(remap)[0], str):
+                remap = {int(k): v for k, v in remap.items()}
+            self.semantic_classes = np.unique(list(remap))
             self.direct_remap_dict = remap
             self.__create_inv_remap()
 
