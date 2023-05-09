@@ -811,8 +811,18 @@ class Trainer(object):
         pred_depth = outputs['depth']
         pred_alpha = outputs['alphas']
 
+
         # MSE loss
         loss = self.criterion(pred_rgb, gt_rgb).mean(-1) # [B, N, 3] --> [B, N]
+
+        with torch.no_grad():
+            if not self.opt.no_wandb:
+                wandb.log({
+                    "max_vals/rgb": torch.abs(pred_rgb).max().item(),
+                    "max_vals/rgb-gt": torch.abs(pred_rgb - gt_rgb).max().item(),
+                    "max_vals/loss_rgb": loss.max().item(), 
+                })
+            
 
         # # CrossEntropyLoss
         # if self.use_semantic:
@@ -937,11 +947,18 @@ class Trainer(object):
             pred_alpha = outputs['alphas'].reshape(B, H, W, -1)
             pred_uncert = outputs['uncertainty_image'].reshape(B, H, W, 1)
         else:
-            pred_uncert = None
             pred_alpha = None
-            
+            pred_uncert = None
 
         loss = self.criterion(pred_rgb, gt_rgb).mean()
+        
+        if not self.opt.no_wandb:
+            wandb.log({
+                "max_vals/rgb": torch.abs(pred_rgb).max().item(),
+                "max_vals/rgb-gt": torch.abs(pred_rgb - gt_rgb).max().item(),
+                "max_vals/loss_rgb": loss.max().item(), 
+            })
+        
 
         if self.use_semantic:
             pred_smntc_log_probs = torch.log(pred_smntc_probs + 1e-9)
@@ -1417,7 +1434,7 @@ class Trainer(object):
             if len(sum_grads) == 0:
                 sum_grads = [0.0]
                 if not self.opt.no_wandb:
-                    wandb.alert("Len of sum_grads is zero :(")
+                    wandb.alert(title="Grad is bad", text="Len of sum_grads is zero :(")
             if not self.opt.no_wandb:
                 wandb.log({"train/grad_norm": np.mean(sum_grads)})
     
@@ -1444,7 +1461,7 @@ class Trainer(object):
 
             loss_val = loss.item()
             if np.isnan(loss_val) and not self.opt.no_wandb:
-                wandb.alert("Loss contains nans")
+                wandb.alert(title="NaNs in Loss", text="Loss contains nans")
                 return False
             total_loss += loss_val
 
@@ -1453,7 +1470,7 @@ class Trainer(object):
                     for metric in self.metrics:
                         metric.update(preds, truths)
                     for smetric in self.segmentation_metrics:
-                        smetric.update(preds_smntc_probs, gt_smntc) # IMPORTANT!
+                        smetric.update(preds_smntc_probs, gt_smntc) # IMPORTANT to use probs here!
                     for dmetric in self.depth_metrics:
                         dmetric.update(pred_depth, ...)
 
