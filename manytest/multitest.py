@@ -59,12 +59,15 @@ class NeRFRunner:
     def prepare_launch(self):
         other_params = deepcopy(self.params)
         other_params.pop("datapath")
+        semantic_remap = other_params.pop('semantic_remap', None)
         true_bool_params = [k for k, v in other_params.items() if isinstance(v, bool) and v]
         other_params = [(k, v) for k, v in other_params.items() if not isinstance(v, bool)]
 
         result = f"{self.params['datapath']} "
         result = result + " ".join(map(lambda pair: f"--{pair[0]}={pair[1]}", other_params)) + " "
         result = result + " ".join(map(lambda k: f"--{k}", true_bool_params)) + " "
+        if semantic_remap:
+            result = result + f"--semantic_remap='{semantic_remap}'"
         return result
     
     @staticmethod

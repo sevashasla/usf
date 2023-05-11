@@ -1179,6 +1179,7 @@ class Trainer(object):
 
                 if self.use_semantic and self.semantic_remap:
                     self.semantic_remap.inv_remap(pred_smntc, inplace=True)
+
                 if write_video:
                     all_preds.append(pred)
                     if self.use_uncert:
@@ -1224,7 +1225,7 @@ class Trainer(object):
                 to_video_uncert = np.zeros((all_rgb_shape[0], all_rgb_shape[1], all_rgb_shape[2], 1), dtype=np.uint8)
             if self.use_semantic:
                 all_preds_smntc = np.stack(all_preds_smntc, axis=0)
-                to_video_semantic = self.sem_colormap[all_preds_smntc]
+                to_video_semantic = self.sem_colormap[self.semantic_remap.remap(all_preds_smntc)]
                 imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), to_video_semantic, fps=10, quality=8, macro_block_size=1)
                 to_log_videos = {
                     **to_log_videos, 
