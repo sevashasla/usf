@@ -48,15 +48,12 @@ class Replica2NGP:
         return np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2 + 1e-10))
 
     @staticmethod
-    def change_transform_matrix(poses, inplace=False):
-        if not inplace:
-            poses = poses.copy()
+    def change_transform_matrix(poses):
+        poses = poses.copy()
         N = poses.shape[0]
 
         poses[:, 0:3, 1] *= -1
         poses[:, 0:3, 2] *= -1
-        poses = poses[:, [1, 0, 2, 3], :] # swap y and z
-        poses[:, 2, :] *= -1 # flip whole world upside down
 
         up = poses[:, 0:3, 1].sum(0)
         up = up / np.linalg.norm(up)
@@ -66,19 +63,7 @@ class Replica2NGP:
 
         poses = R @ poses
 
-        totw = 0.0
-        totp = np.array([0.0, 0.0, 0.0])
-        for i in trange(N):
-            mf = poses[i, :3, :]
-            for j in range(i + 1, N):
-                mg = poses[j, :3, :]
-                p, w = Replica2NGP.closest_point_2_lines(mf[:,3], mf[:,2], mg[:,3], mg[:,2])
-                #print(i, j, p, w)
-                if w > 0.01:
-                    totp += p * w
-                    totw += w
-        totp /= totw
-        poses[:, :3, 3] -= totp
+        poses[:, :3, 3] -= poses[:, :3, 3].mean(axis=0) # center of mass
         avglen = np.linalg.norm(poses[:, :3, 3], axis=-1).mean()
         poses[:, :3, 3] *= 4.0 / avglen
         return poses
@@ -118,7 +103,8 @@ class Replica2NGP:
                 poses.append(pose)
         
         poses = np.array(poses)
-        poses = self.change_transform_matrix(poses, inplace=False)
+        poses = self.change_transform_matrix(poses)
+
         print("[INFO] poses are prepared!")
 
         for i in range(len(poses)):

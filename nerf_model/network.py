@@ -128,12 +128,12 @@ class NeRFNetwork(NeRFRenderer):
         # uncertainty semantic
         if self.use_semantic_uncert:
             self.beta_min = beta_min
-            self.layer_semantic_uncertainty = nn.Linear(self.geo_feat_dim, 1)
+            self.layer_semantic_uncertainty = nn.Linear(self.hidden_dim_semantic, 1)
 
         # uncertainty
         if self.use_uncert:
             self.beta_min = beta_min
-            self.layer_uncertainty = nn.Linear(self.geo_feat_dim, 1)
+            self.layer_uncertainty = nn.Linear(self.hidden_dim_color, 1)
 
     def semantic_postprocess_prob(self, mu, sigma=None):
         '''
@@ -183,50 +183,26 @@ class NeRFNetwork(NeRFRenderer):
             h = self.sigma_net[l](h)
             if l != self.num_layers - 1:
                 h = F.relu(h, inplace=True)
-            else:
-                prev_last = h
 
         #sigma = F.relu(h[..., 0])
         sigma = trunc_exp(h[..., 0])
         geo_feat = h[..., 1:]
 
         # color
-        d = self.encoder_dir(d)
-        h = torch.cat([d, geo_feat], dim=-1)
-        for l in range(self.num_layers_color):
-            h = self.color_net[l](h)
-            if l != self.num_layers_color - 1:
-                h = F.relu(h, inplace=True)
-        
-        # sigmoid activation for rgb
-        color = torch.sigmoid(h)
-
-        # semantic
+        color_pred = self.color(x, d, get_feat=geo_feat)
         if self.use_semantic:
-            h = geo_feat
-            for l in range(self.num_layers_semantic):
-                h = self.semantic_net[l](h)
-                if l != self.num_layers_semantic - 1:
-                    h = F.relu(h, inplace=True)
-            semantic = h
+            semantic_pred = self.semantic_pred(x, geo_feat=geo_feat)
         else:
-            semantic = None
+            semantic_pred = {
+                "smntc": None,
+                "smntc_uncert": None,
+            }
 
-        # uncertainty
-        if self.use_uncert:
-            uncertainty = self.layer_uncertainty(geo_feat)
-            uncertainty = F.softplus(uncertainty) + self.beta_min
-        else:
-            uncertainty = None
-
-        # semantic uncertainty
-        if self.use_semantic_uncert:
-            semantic_uncertainty = self.layer_semantic_uncertainty(geo_feat)
-            semantic_uncertainty = F.softplus(semantic_uncertainty) + self.beta_min
-        else:
-            semantic_uncertainty = None
-
-        return sigma, color, semantic, uncertainty, semantic_uncertainty
+        return {
+                "sigma": sigma, 
+                **color_pred,
+                **semantic_pred,
+            }
 
     def density(self, x):
         # x: [N, 3], in [-bound, bound]
@@ -275,9 +251,18 @@ class NeRFNetwork(NeRFRenderer):
 
         if mask is not None:
             rgbs = torch.zeros(mask.shape[0], 3, dtype=x.dtype, device=x.device) # [N, 3]
+            
+            if self.use_uncert:
+                uncert = torch.zeros(mask.shape[0], 1, dtype=x.dtype, device=x.device)
+            else:
+                uncert = None
+            
             # in case of empty mask
             if not mask.any():
-                return rgbs
+                return {
+                    "color": rgbs,
+                    "uncert": uncert,
+                }
             x = x[mask]
             d = d[mask]
             geo_feat = geo_feat[mask]
@@ -285,102 +270,83 @@ class NeRFNetwork(NeRFRenderer):
         d = self.encoder_dir(d)
         h = torch.cat([d, geo_feat], dim=-1)
         for l in range(self.num_layers_color):
-            h = self.color_net[l](h)
             if l != self.num_layers_color - 1:
+                h = self.color_net[l](h)
                 h = F.relu(h, inplace=True)
+            else:
+                h_color = self.color_net[-1](h)
+                if self.use_uncert:
+                    h_uncert = self.layer_uncertainty(h)
         
         # sigmoid activation for rgb
-        h = torch.sigmoid(h)
+        h_color = torch.sigmoid(h_color)
+        if self.use_uncert:
+            h_uncert = F.softplus(h_uncert) + self.beta_min
+        else:
+            h_uncert = None
 
         if mask is not None:
-            rgbs[mask] = h.to(rgbs.dtype) # fp16 --> fp32
+            rgbs[mask] = h_color.to(rgbs.dtype) # fp16 --> fp32
+            if self.use_uncert:
+                uncert[mask] = h_uncert.to(uncert.dtype) # fp16 --> fp32
+            else:
+                uncert = None
         else:
-            rgbs = h
+            rgbs = h_color
+            uncert = h_uncert
 
-        return rgbs
+        return {
+            "color": rgbs,
+            "uncert": uncert,
+        }
 
     def semantic_pred(self, x, mask=None, geo_feat=None, **kwargs):
         # x: [N, 3] in [-bound, bound]
         # mask: [N,], bool, indicates where we actually needs to compute rgb.
 
         if not self.use_semantic:
-            raise RuntimeError("call semantic pred, but not use semantic")
+            raise RuntimeError("call semantic pred, but use_semantic is false!")
 
         if mask is not None:
             smntc = torch.zeros(mask.shape[0], self.num_semantic_classes, dtype=x.dtype, device=x.device) # [N, SC]
+            if self.use_semantic_uncert:
+                smntc_uncert = torch.zeros(mask.shape[0], 1, dtype=x.dtype, device=x.device) # [N, SC]
+            else:
+                smntc_uncert = None
             # in case of empty mask
             if not mask.any():
-                return smntc
+                return {
+                    "smntc": smntc,
+                    "smntc_uncert": smntc_uncert,
+                }
+            
             x = x[mask]
             geo_feat = geo_feat[mask]
 
         h = geo_feat
         for l in range(self.num_layers_semantic):
-            h = self.semantic_net[l](h)
             if l != self.num_layers_semantic - 1:
+                h = self.semantic_net[l](h)
                 h = F.relu(h, inplace=True)
+            else:
+                h_smntc = self.semantic_net[-1](h)
+                if self.use_semantic_uncert:
+                    h_smntc_uncert = self.layer_semantic_uncertainty(h)
 
         if mask is not None:
-            smntc[mask] = h.to(smntc.dtype) # fp16 --> fp32
+            smntc[mask] = h_smntc.to(smntc.dtype) # fp16 --> fp32
+            if self.use_semantic_uncert:
+                smntc_uncert[mask] = h_smntc_uncert.to(smntc_uncert.dtype) # fp16 --> fp32
+            else:
+                smntc_uncert = None
         else:
-            smntc = h
+            smntc = h_smntc
+            smntc_uncert = h_smntc_uncert
 
-        return smntc
-
-    def uncertainty_pred(self, x, mask=None, geo_feat=None, **kwargs):
-        # x: [N, 3] in [-bound, bound]
-        # mask: [N,], bool, indicates where we actually needs to compute rgb.
-
-        if not self.use_uncert:
-            raise RuntimeError("call uncertainty pred, but not use uncert")
-
-        if mask is not None:
-            uncert = torch.zeros(mask.shape[0], 1, dtype=x.dtype, device=x.device) # [N, 3]
-            # in case of empty mask
-            if not mask.any():
-                return uncert
-            x = x[mask]
-            geo_feat = geo_feat[mask]
-        
-        # uncertainty
-        h = geo_feat
-        h = self.layer_uncertainty(h)
-        h = F.softplus(h) + self.beta_min
-
-        if mask is not None:
-            uncert[mask] = h.to(uncert.dtype) # fp16 --> fp32
-        else:
-            uncert = h
-
-        return uncert
-    
-    def semantic_uncertainty_pred(self, x, mask=None, geo_feat=None, **kwargs):
-        # x: [N, 3] in [-bound, bound]
-        # mask: [N,], bool, indicates where we actually needs to compute rgb.
-
-        if not self.use_semantic_uncert:
-            raise RuntimeError("call semantic uncertainty pred, but not use uncert")
-
-        if mask is not None:
-            semantic_uncert = torch.zeros(mask.shape[0], 1, dtype=x.dtype, device=x.device) # [N, 3]
-            # in case of empty mask
-            if not mask.any():
-                return semantic_uncert
-            x = x[mask]
-            geo_feat = geo_feat[mask]
-        
-        # uncertainty
-        h = geo_feat
-        h = self.layer_semantic_uncertainty(h)
-        h = F.softplus(h) + self.beta_min
-
-        if mask is not None:
-            semantic_uncert[mask] = h.to(semantic_uncert.dtype) # fp16 --> fp32
-        else:
-            semantic_uncert = h
-
-        return semantic_uncert
-
+        return {
+                "smntc": smntc,
+                "smntc_uncert": smntc_uncert,
+            }
 
     # optimizer utils
     def get_params(self, lr):

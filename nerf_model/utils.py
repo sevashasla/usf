@@ -36,6 +36,7 @@ from torchmetrics import ConfusionMatrix
 from sklearn.metrics import confusion_matrix
 
 from .time_measure import TimeMeasure
+from .active_learning_strategies import bayesian_choose, mean_choose
 tm = TimeMeasure()
 from imgviz import label_colormap
 
@@ -468,55 +469,6 @@ class LPIPSMeter:
     def wandb_log(self, prefix):
         return {f"{prefix}/LPIPS": self.measure()}
 
-@torch.no_grad()
-def choose_new_k(opt, model, holdout_dataset, k):
-    '''
-    Fucntion for active learning
-    '''
-    pres = []
-    posts = []
-    su_weight = opt.su_weight
-
-    for data in holdout_dataset.dataloader():
-        model.eval()
-
-        rays_o = data['rays_o'] # [B, N, 3]
-        rays_d = data['rays_d'] # [B, N, 3]
-        images = data['images'] # [B, H, W, 3/4]
-
-        assert images.size(0) == 1 # batch_size must be equal to 1
-
-        # eval with fixed background color
-        bg_color = 1
-
-        outputs = model.render(rays_o, rays_d, staged=True, bg_color=bg_color, perturb=False, **vars(holdout_dataset.opt))
-
-        pred_alpha = outputs['alphas']
-        alphas_shifted = torch.cat([torch.ones_like(pred_alpha[..., :1]), 1 - pred_alpha + 1e-15], dim=-1) # [N, T+t+1]
-        weights = pred_alpha * torch.cumprod(alphas_shifted, dim=-1)[..., :-1]
-        
-        pre = 0.0
-        post = 0.0
-        if opt.use_uncert:
-            pred_uncert = outputs['uncertainty_image'] + 1e-9
-            uncert_all = outputs['uncertainty_all'] + 1e-9
-            pre += (1.0 - su_weight) * uncert_all.sum([1,2])
-            post += (1.0 - su_weight) * (1. / (1. / uncert_all + weights ** 2.0 / pred_uncert)).sum([1 , 2])
-
-        if opt.use_semantic_uncert:
-            pred_semantic_uncert = outputs['semantic_uncertainty_image'] + 1e-9
-            semantic_uncert_all = outputs['semantic_uncertainty_all'] + 1e-9
-            pre += su_weight * semantic_uncert_all.sum([1,2])
-            post += su_weight * (1. / (1. / semantic_uncert_all + weights ** 2.0 / pred_semantic_uncert)).sum([1 , 2])
-        
-        pres.append(pre)
-        posts.append(post)
-    
-    pres = torch.cat(pres, 0)
-    posts = torch.cat(posts, 0)
-    index = torch.topk(pres-posts, k)[1].cpu().numpy()
-    return index
-
 
 class EarlyStop:
     def __init__(self, alpha=1e-3, relative=True, last=3, occ=2):
@@ -830,7 +782,7 @@ class Trainer(object):
         # else:
         #     loss_smntc = torch.tensor(0.0)
 
-        # CrossEntropyLoss
+        # CrossEntropyLoss?
         if self.use_semantic:
             pred_smntc_probs = self.model.semantic_postprocess_prob(pred_smntc, pred_uncert_smntc)
             pred_smntc_log_probs = torch.log(pred_smntc_probs + 1e-9)
@@ -1105,7 +1057,7 @@ class Trainer(object):
         if holdout_dataset is None or len(holdout_dataset) == 0:
             return 
         # it is new indices to extend train dataset
-        new_k = choose_new_k(
+        new_k = mean_choose(
             self.opt, 
             self.model, holdout_dataset, 
             min(len(holdout_dataset), self.active_learning_num), # use all samples at the end

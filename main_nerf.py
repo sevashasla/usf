@@ -40,7 +40,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=20, help="training epochs")
     parser.add_argument('--video_interval', type=int, default=None, help="how often to make & save video")
     parser.add_argument('--video_mode', type=int, default=1, help="mode of how to choose poses for video making")
-    parser.add_argument('--warmup_epochs', type=int, default=20, help="number of warmup epochs")
+    parser.add_argument('--warmup_epochs', type=float, default=20, help="number of warmup epochs")
     parser.add_argument('--lr', type=float, default=1e-2, help="initial learning rate")
     parser.add_argument('--ckpt', type=str, default='latest')
     parser.add_argument('--num_rays', type=int, default=4096, help="num rays sampled per image for each training step")

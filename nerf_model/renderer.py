@@ -117,12 +117,6 @@ class NeRFRenderer(nn.Module):
     def semantic_postprocess_prob(mu, sigma, Ngen=1000):
         raise NotImplementedError()
 
-    def uncertainty_pred(self, x, mask=None, geo_feat=None, **kwargs):
-        raise NotImplementedError()
-
-    def semantic_uncertainty_pred(self, x, mask=None, geo_feat=None, **kwargs):
-        raise NotImplementedError()
-
     def reset_extra_state(self):
         if not self.cuda_ray:
             return 
@@ -226,17 +220,15 @@ class NeRFRenderer(nn.Module):
             density_outputs[k] = v.view(-1, v.shape[-1])
 
         mask = weights > 1e-4 # hard coded
-        rgbs = self.color(xyzs.reshape(-1, 3), dirs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
-        rgbs = rgbs.view(N, -1, 3) # [N, T+t, 3]
+        color_pred = self.color(xyzs.reshape(-1, 3), dirs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
+        rgbs = color_pred["color"].view(N, -1, 3) # [N, T+t, 3]
         if self.use_semantic:
-            smntc = self.semantic_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
-            smntc = smntc.view(N, -1, self.num_semantic_classes) # [N, T+t, SC]
+            semantic_pred = self.semantic_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
+            smntc = semantic_pred["smntc"].view(N, -1, self.num_semantic_classes) # [N, T+t, SC]
         if self.use_semantic_uncert:
-            semantic_uncert = self.semantic_uncertainty_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
-            semantic_uncert = semantic_uncert.view(N, -1, 1) # [N, T+t, 1]
+            semantic_uncert = semantic_pred["semantic_uncert"].view(N, -1, 1) # [N, T+t, 1]
         if self.use_uncert:
-            uncert = self.uncertainty_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
-            uncert = uncert.view(N, -1, 1) # [N, T+t, 1]
+            uncert = color_pred["uncert"].view(N, -1, 1) # [N, T+t, 1]
 
         #print(xyzs.shape, 'valid_rgb:', mask.sum().item())
 
