@@ -1,4 +1,4 @@
-name: "bound-and-scale" # name of group in wandb
+name: "exp_lambdas_new_transforms" # name of group in wandb
 project: "actsrf"
 place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
 sequences: ["Sequence_1", "Sequence_2"]
@@ -20,11 +20,10 @@ gpu: [0, 2]
 
 experiments:
 ### EXPERIMENT 1 ###
-
   -
     w: 640
     h: 480
-    place: "room_1"
+    place: "room_0"
     sequence: "Sequence_1"
     need_transforms: True
     
@@ -35,24 +34,25 @@ experiments:
 
     common: 
       video_mode: 2
-      max_ray_batch: 4096
-      lr: 0.01
-      warmup_epochs: 1
+      lr: 0.003
+      bound: 5.0
+      scale: 0.5
+      use_semantic: True
+      max_ray_batch: 2048
 
     semantic_ngp:
-
       - 
-        bound: 5.0
-        scale: 0.5
-
+        lambd: 0.1
       - 
-        bound: 3.33
-        scale: 0.33
-
+        lambd: 0.01
       - 
-        bound: 2.5
-        scale: 0.25
-
+        lambd: 0.05
+      - 
+        lambd: 0.005
+      -
+        lambd: 0.001
+      - 
+        lambd: 0.0005
 
 ### EXPERIMENT 2 ###
   -
@@ -69,19 +69,74 @@ experiments:
 
     common: 
       video_mode: 2
-      max_ray_batch: 4096
-      lr: 0.01
-      warmup_epochs: 1
+      lr: 0.003
+      bound: 5.0
+      scale: 0.5
+      use_semantic: True
+      max_ray_batch: 2048
 
     semantic_ngp:
       - 
-        bound: 5.0
-        scale: 0.5
-
+        lambd: 0.1
       - 
-        bound: 3.33
-        scale: 0.33
-
+        lambd: 0.01
       - 
-        bound: 2.5
-        scale: 0.25
+        lambd: 0.05
+      - 
+        lambd: 0.005
+      -
+        lambd: 0.001
+      - 
+        lambd: 0.0005
+
+### EXPERIMENT 3 ###
+  -
+    w: 640
+    h: 480
+    place: "room_0"
+    sequence: "Sequence_1"
+    need_transforms: True
+    
+    eval_ratio: 0.125
+    train_ratio: 0.625
+    holdout_ratio: 0.0
+    test_ratio: 0.250
+
+    common: 
+      video_mode: 2
+      lr: 0.003
+      bound: 5.0
+      scale: 0.5
+      use_semantic: False
+      max_ray_batch: 2048
+
+    semantic_ngp:
+      - 
+        name: "no_semantic"
+        lambd: 0.0
+
+### EXPERIMENT 2 ###
+  -
+    w: 640
+    h: 480
+    place: "office_0"
+    sequence: "Sequence_1"
+    need_transforms: True
+    
+    eval_ratio: 0.125
+    train_ratio: 0.625
+    holdout_ratio: 0.0
+    test_ratio: 0.250
+
+    common: 
+      video_mode: 2
+      lr: 0.003
+      bound: 5.0
+      scale: 0.5
+      use_semantic: False
+      max_ray_batch: 2048
+
+    semantic_ngp:
+      - 
+        name: "no_semantic"
+        lambd: 0.0

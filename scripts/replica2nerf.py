@@ -50,7 +50,6 @@ class Replica2NGP:
     @staticmethod
     def change_transform_matrix(poses):
         poses = poses.copy()
-        N = poses.shape[0]
 
         poses[:, 0:3, 1] *= -1
         poses[:, 0:3, 2] *= -1

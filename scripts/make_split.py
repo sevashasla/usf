@@ -32,8 +32,8 @@ class Splitter():
         np.random.seed(random_state)
         all_ids = np.random.permutation(n)
         train_ids = all_ids[:train_size]
-        val_ids = all_ids[train_size:train_size + val_size]
-        holdout_ids = all_ids[train_size + val_size:train_size + val_size + holdout_size]
+        holdout_ids = all_ids[train_size:train_size + holdout_size]
+        val_ids = all_ids[train_size + holdout_size:train_size + holdout_size + val_size]
         test_ids = all_ids[-test_size - 1:] # take them from the end
         return train_ids, val_ids, holdout_ids, test_ids
 

@@ -1,4 +1,4 @@
-name: "bound-and-scale" # name of group in wandb
+name: "active_rgb" # name of group in wandb
 project: "actsrf"
 place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
 sequences: ["Sequence_1", "Sequence_2"]
@@ -16,43 +16,49 @@ start: # start script
 convert_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/replica2nerf.py" # script to convert poses to nerf format
 split_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/make_split.py"
 continue_on_fail: False
-gpu: [0, 2]
+gpu: [0, 1, 2]
 
 experiments:
 ### EXPERIMENT 1 ###
-
   -
     w: 640
     h: 480
-    place: "room_1"
+    place: "room_0"
     sequence: "Sequence_1"
     need_transforms: True
     
-    eval_ratio: 0.125
-    train_ratio: 0.625
-    holdout_ratio: 0.0
-    test_ratio: 0.250
+    # total: 900 photos
+    eval_ratio: 0.125   # 112
+    train_ratio: 0.250  # 225
+    holdout_ratio: 0.375  # 337
+    test_ratio: 0.250   # 225
 
     common: 
       video_mode: 2
-      max_ray_batch: 4096
-      lr: 0.01
-      warmup_epochs: 1
+      lr: 0.003
+      bound: 5.0
+      scale: 0.5
+      lambd: 0.005
+      max_ray_batch: 2048
+      use_semantic: False
+      use_uncert: True
+      # parameters for active learning
+      active_learning_interval: 50
+      active_learning_num: 40
 
     semantic_ngp:
-
       - 
-        bound: 5.0
-        scale: 0.5
-
+        omega: 0.01
       - 
-        bound: 3.33
-        scale: 0.33
-
+        omega: 0.05
       - 
-        bound: 2.5
-        scale: 0.25
-
+        omega: 0.1
+      - 
+        omega: 0.25
+      - 
+        omega: 0.5
+      - 
+        omega: 0.7
 
 ### EXPERIMENT 2 ###
   -
@@ -62,26 +68,35 @@ experiments:
     sequence: "Sequence_1"
     need_transforms: True
     
-    eval_ratio: 0.125
-    train_ratio: 0.625
-    holdout_ratio: 0.0
-    test_ratio: 0.250
+    # total: 900 photos
+    eval_ratio: 0.125   # 112
+    train_ratio: 0.250  # 225
+    holdout_ratio: 0.375  # 337
+    test_ratio: 0.250   # 225
 
     common: 
       video_mode: 2
-      max_ray_batch: 4096
-      lr: 0.01
-      warmup_epochs: 1
+      lr: 0.003
+      bound: 5.0
+      scale: 0.5
+      lambd: 0.005
+      max_ray_batch: 2048
+      use_semantic: False
+      use_uncert: True
+      # parameters for active learning
+      active_learning_interval: 50
+      active_learning_num: 40
 
     semantic_ngp:
       - 
-        bound: 5.0
-        scale: 0.5
-
+        omega: 0.01
       - 
-        bound: 3.33
-        scale: 0.33
-
+        omega: 0.05
       - 
-        bound: 2.5
-        scale: 0.25
+        omega: 0.1
+      - 
+        omega: 0.25
+      - 
+        omega: 0.5
+      - 
+        omega: 0.7
