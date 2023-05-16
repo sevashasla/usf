@@ -40,7 +40,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=20, help="training epochs")
     parser.add_argument('--video_interval', type=int, default=None, help="how often to make & save video")
     parser.add_argument('--video_mode', type=int, default=1, help="mode of how to choose poses for video making")
-    parser.add_argument('--warmup_epochs', type=float, default=20, help="number of warmup epochs")
+    parser.add_argument('--warmup_epochs', type=float, default=1, help="number of warmup epochs")
     parser.add_argument('--lr', type=float, default=1e-2, help="initial learning rate")
     parser.add_argument('--ckpt', type=str, default='latest')
     parser.add_argument('--num_rays', type=int, default=4096, help="num rays sampled per image for each training step")
@@ -262,10 +262,14 @@ if __name__ == '__main__':
         iters = len(train_loader) * opt.epochs
 
         # decay to 0.1 * init_lr at last iter step
+        def increase_lr(step, gamma, i):
+            return 1.0 + (gamma - 1.0) * (i // step)
+
         scheduler = lambda optimizer: optim.lr_scheduler.LambdaLR(
             optimizer, lambda iter: 
                 0.1 ** min(iter / iters, 1) * \
-                min(1e-3 + 1 / opt.warmup_epochs * iter, 1) # warmup
+                min(1e-3 + 1 / (opt.warmup_epochs * len(train_loader)) * iter, 1) * \
+                increase_lr(opt.active_learning_interval * len(train_loader), 1.2, iter)
             )
 
         metrics = [PSNRMeter(), LPIPSMeter(device=device), SSIMMeter(device=device)]

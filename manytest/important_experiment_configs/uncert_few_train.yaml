@@ -1,4 +1,4 @@
-name: "active_rgb" # name of group in wandb
+name: "uncertainty_few_train" # name of group in wandb
 project: "actsrf"
 place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
 sequences: ["Sequence_1", "Sequence_2"]
@@ -15,7 +15,7 @@ start: # start script
 
 convert_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/replica2nerf.py" # script to convert poses to nerf format
 split_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/make_split.py"
-continue_on_fail: False
+continue_on_fail: True
 gpu: [0, 1, 2]
 
 experiments:
@@ -29,8 +29,8 @@ experiments:
     
     # total: 900 photos
     eval_ratio: 0.125   # 112
-    train_ratio: 0.250  # 225
-    holdout_ratio: 0.375  # 337
+    train_ratio: 0.03  # 27
+    holdout_ratio: 0.595  # 535
     test_ratio: 0.250   # 225
 
     common: 
@@ -43,22 +43,21 @@ experiments:
       use_semantic: True
       use_uncert: True
       # parameters for active learning
-      active_learning_interval: 50
-      active_learning_num: 40
+      active_learning_interval: 1550
+      active_learning_num: 10
 
     semantic_ngp:
+      - 
+        omega: 0.001
       - 
         omega: 0.01
       - 
         omega: 0.05
       - 
+        do_run: True
         omega: 0.1
       - 
-        omega: 0.25
-      - 
-        omega: 0.5
-      - 
-        omega: 0.7
+        omega: 0.3
 
 ### EXPERIMENT 2 ###
   -
@@ -70,8 +69,8 @@ experiments:
     
     # total: 900 photos
     eval_ratio: 0.125   # 112
-    train_ratio: 0.250  # 225
-    holdout_ratio: 0.375  # 337
+    train_ratio: 0.03  # 27
+    holdout_ratio: 0.595  # 535
     test_ratio: 0.250   # 225
 
     common: 
@@ -84,10 +83,13 @@ experiments:
       use_semantic: True
       use_uncert: True
       # parameters for active learning
-      active_learning_interval: 50
-      active_learning_num: 40
+      active_learning_interval: 1550
+      active_learning_num: 10
 
     semantic_ngp:
+      - 
+        do_run: True
+        omega: 0.001
       - 
         omega: 0.01
       - 
@@ -95,8 +97,45 @@ experiments:
       - 
         omega: 0.1
       - 
-        omega: 0.25
+        omega: 0.3
+
+
+### EXPERIMENT 2 ###
+  -
+    w: 640
+    h: 480
+    place: "room_1"
+    sequence: "Sequence_1"
+    need_transforms: True
+    
+    # total: 900 photos
+    eval_ratio: 0.125   # 112
+    train_ratio: 0.03  # 27
+    holdout_ratio: 0.595  # 535
+    test_ratio: 0.250   # 225
+
+    common: 
+      video_mode: 2
+      lr: 0.003
+      bound: 5.0
+      scale: 0.5
+      lambd: 0.005
+      max_ray_batch: 2048
+      use_semantic: True
+      use_uncert: True
+      # parameters for active learning
+      active_learning_interval: 1550
+      active_learning_num: 10
+
+    semantic_ngp:
       - 
-        omega: 0.5
+        omega: 0.001
       - 
-        omega: 0.7
+        omega: 0.01
+      - 
+        omega: 0.05
+      - 
+        omega: 0.1
+      - 
+        omega: 0.3
+

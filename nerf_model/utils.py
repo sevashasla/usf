@@ -632,7 +632,7 @@ class Trainer(object):
             self.ema = None
 
         if early_stop is None:
-            early_stop = EarlyStop(alpha=5e-3, relative=False)
+            early_stop = EarlyStop(alpha=1e-3, relative=False)
         self.early_stop = early_stop
 
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.fp16)
