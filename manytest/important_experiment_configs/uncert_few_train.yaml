@@ -54,10 +54,29 @@ experiments:
       - 
         omega: 0.05
       - 
-        do_run: True
         omega: 0.1
       - 
         omega: 0.3
+      # ADD IT            
+      - 
+        omega: 0.15
+      - 
+        omega: 0.20
+      - 
+        omega: 0.25
+      - 
+        omega: 0.0
+      # ADD AGAIN
+      - 
+        omega: 0.4
+      - 
+        omega: 0.5
+      - 
+        omega: 0.6
+      - 
+        omega: 0.7
+      
+
 
 ### EXPERIMENT 2 ###
   -
@@ -88,7 +107,6 @@ experiments:
 
     semantic_ngp:
       - 
-        do_run: True
         omega: 0.001
       - 
         omega: 0.01
@@ -98,6 +116,24 @@ experiments:
         omega: 0.1
       - 
         omega: 0.3
+      # ADD IT            
+      - 
+        omega: 0.15
+      - 
+        omega: 0.20
+      - 
+        omega: 0.25
+      -
+        omega: 0.0
+      # ADD AGAIN
+      - 
+        omega: 0.4
+      - 
+        omega: 0.5
+      - 
+        omega: 0.6
+      - 
+        omega: 0.7
 
 
 ### EXPERIMENT 2 ###
@@ -138,4 +174,22 @@ experiments:
         omega: 0.1
       - 
         omega: 0.3
+      # ADD IT            
+      - 
+        omega: 0.15
+      - 
+        omega: 0.20
+      - 
+        omega: 0.25
+      - 
+        omega: 0.0
+      # ADD AGAIN
+      - 
+        omega: 0.4
+      - 
+        omega: 0.5
+      - 
+        omega: 0.6
+      - 
+        omega: 0.7
 

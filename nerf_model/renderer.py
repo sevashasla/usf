@@ -226,7 +226,7 @@ class NeRFRenderer(nn.Module):
             semantic_pred = self.semantic_pred(xyzs.reshape(-1, 3), mask=mask.reshape(-1), **density_outputs)
             smntc = semantic_pred["smntc"].view(N, -1, self.num_semantic_classes) # [N, T+t, SC]
         if self.use_semantic_uncert:
-            semantic_uncert = semantic_pred["semantic_uncert"].view(N, -1, 1) # [N, T+t, 1]
+            semantic_uncert = semantic_pred["smntc_uncert"].view(N, -1, 1) # [N, T+t, 1]
         if self.use_uncert:
             uncert = color_pred["uncert"].view(N, -1, 1) # [N, T+t, 1]
 
