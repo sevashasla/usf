@@ -385,6 +385,17 @@ class PSNRMeter:
     def wandb_log(self, prefix):
         return {f"{prefix}/PSNR": self.measure()}
 
+def f1_miou_lpips(miou: float, lpips: float) -> float:
+    '''
+    lpips ~ shows how close images are.
+    miou ~ shows how close semantic maps are
+    -> count ~ f1 score of it
+
+    it is used only for sweep!
+    '''
+
+    inv_lpips = 1.0 - lpips # must as big as possible
+    return inv_lpips * miou / (inv_lpips + miou + 1e-5)
 
 class SSIMMeter:
     def __init__(self, device=None):
@@ -1462,6 +1473,13 @@ class Trainer(object):
                     self.log(dmetric.report(), style="red")
                     metrics_to_report.update(dmetric.wandb_log("train"))
                 self._clear_metrics()
+
+                metrics_to_report["train/f1_miou_lpips"] = \
+                    f1_miou_lpips(
+                        metrics_to_report.get("train/miou", 0.0), 
+                        metrics_to_report.get("train/LPIPS", 1.0)
+                    )
+                
                 if not self.opt.no_wandb:
                     wandb.log(metrics_to_report)
 
@@ -1643,6 +1661,13 @@ class Trainer(object):
                 metrics_to_report.update(dmetric.wandb_log(mode))
                 self.log(dmetric.report(), style="blue")
             self._clear_metrics()
+            
+            metrics_to_report[f"{mode}/f1_miou_lpips"] = \
+                f1_miou_lpips(
+                    metrics_to_report.get(f"{mode}/miou", 0.0), 
+                    metrics_to_report.get(f"{mode}/LPIPS", 1.0)
+                )
+
             if not self.opt.no_wandb:
                 wandb.log(metrics_to_report)
 

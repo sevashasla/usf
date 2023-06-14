@@ -151,8 +151,9 @@ if __name__ == '__main__':
 
     # wandb
     parser.add_argument('--project', type=str, default="ngp_with_semantic_nerf")
-    parser.add_argument('--group', type=str)
+    parser.add_argument('--group', type=str, default=None)
     parser.add_argument('--resume', action="store_true")
+    parser.add_argument('--sweep_id', type=str, default=None)
     parser.add_argument('--no_wandb', action="store_true")
     parser.add_argument('--wandbdir', type=str, default="/mnt/hdd8/skorokhodov_vs/wandb_logs")
 
@@ -317,15 +318,26 @@ if __name__ == '__main__':
             print(f"[INFO] MAX_EPOCH: {opt.epochs}, ITERS: {iters}")
             print(f"[INFO] RESUME: {opt.resume}")
             if not opt.no_wandb:
-                wandb.init(
-                    project=opt.project,
-                    group=opt.group,
-                    name=f"semantic_ngp: {os.path.basename(opt.workspace)}",
-                    config={**vars(opt), "mode": "semantic_ngp"},
-                    tags=["semantic_ngp"],
-                    dir=opt.wandbdir,
-                    resume=opt.resume,
-                )
+                # sweep is running!
+                if opt.sweep_id:
+                    wandb.init(
+                        id=opt.sweep_id, 
+                        resume=True,
+                        project=opt.project,
+                        config={**vars(opt), "mode": "semantic_ngp"},
+                        tags=["semantic_ngp"],
+                        dir=opt.wandbdir,
+                    )
+                else:
+                    wandb.init(
+                        project=opt.project,
+                        group=opt.group,
+                        name=f"semantic_ngp: {os.path.basename(opt.workspace)}",
+                        config={**vars(opt), "mode": "semantic_ngp"},
+                        tags=["semantic_ngp"],
+                        dir=opt.wandbdir,
+                        resume=opt.resume,
+                    )
 
             test_dataset = NeRFDataset(opt, device=device, type='test', semantic_remap=nerf_dataset.semantic_remap, tvh_indexer=nerf_dataset.tvh_indexer)
             video_dataset = NeRFDataset(opt, device=device, type='video', semantic_remap=nerf_dataset.semantic_remap, n_video=opt.n_video)

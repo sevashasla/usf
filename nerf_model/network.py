@@ -172,6 +172,7 @@ class NeRFNetwork(NeRFRenderer):
         # x: [N, 3], in [-bound, bound]
         # d: [N, 3], nomalized in [-1, 1]
 
+        # TODO: Add here density call
         # sigma
         if self.first_encoding == "hashgrid":
             x = self.encoder(x, bound=self.bound)
