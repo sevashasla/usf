@@ -28,8 +28,22 @@ class NeRFNetwork(NeRFRenderer):
                  beta_min=0.01,
                  bound=1,
                  Ngen=10, 
+                 arc_rgb=0, 
+                 arc_smntc=0,
                  **kwargs,
                  ):
+        '''
+        architecture_* - how deep to take features from the last layer
+        
+        arc_rgb:
+            [0, 1]: hidden_dim_color
+            2: in_dim_dir + geo_feat_dim
+            3: geo_feat_dim
+        
+        arc_smntc:
+            0: hidden_dim_semantic
+            1: geo_feat_dim
+        '''
         super().__init__(bound, **kwargs)
 
         self.use_uncert = opt.use_uncert
@@ -39,6 +53,9 @@ class NeRFNetwork(NeRFRenderer):
 
         self.num_semantic_classes = num_semantic_classes
         self.Ngen = Ngen
+
+        self.arc_rgb = arc_rgb
+        self.arc_smntc = arc_smntc
 
         # sigma network
         self.num_layers = num_layers
@@ -107,6 +124,11 @@ class NeRFNetwork(NeRFRenderer):
         else:
             self.bg_net = None
 
+        if self.use_uncert:
+            self.in_uncert_dim = [self.hidden_dim_color, self.hidden_dim_color, self.in_dim_dir + self.geo_feat_dim, self.geo_feat_dim][arc_rgb]
+            self.beta_min = beta_min
+            self.layer_uncertainty = nn.Linear(self.in_uncert_dim, 1)
+
         # semantic network
         if self.use_semantic:
             self.num_layers_semantic = num_layers_semantic
@@ -127,13 +149,10 @@ class NeRFNetwork(NeRFRenderer):
         
         # uncertainty semantic
         if self.use_semantic_uncert:
+            self.in_smntc_uncert_dim = [self.hidden_dim_semantic, self.geo_feat_dim][arc_smntc]
             self.beta_min = beta_min
             self.layer_semantic_uncertainty = nn.Linear(self.hidden_dim_semantic, 1)
 
-        # uncertainty
-        if self.use_uncert:
-            self.beta_min = beta_min
-            self.layer_uncertainty = nn.Linear(self.hidden_dim_color, 1)
 
     def semantic_postprocess_prob(self, mu, sigma=None):
         '''
@@ -172,22 +191,10 @@ class NeRFNetwork(NeRFRenderer):
         # x: [N, 3], in [-bound, bound]
         # d: [N, 3], nomalized in [-1, 1]
 
-        # TODO: Add here density call
         # sigma
-        if self.first_encoding == "hashgrid":
-            x = self.encoder(x, bound=self.bound)
-        else:
-            x = self.encoder(x)
-
-        h = x
-        for l in range(self.num_layers):
-            h = self.sigma_net[l](h)
-            if l != self.num_layers - 1:
-                h = F.relu(h, inplace=True)
-
-        #sigma = F.relu(h[..., 0])
-        sigma = trunc_exp(h[..., 0])
-        geo_feat = h[..., 1:]
+        sigma_pred = self.density(x)        
+        sigma = sigma_pred["sigma"]
+        geo_feat = sigma_pred["geo_feat"]
 
         # color
         color_pred = self.color(x, d, get_feat=geo_feat)
@@ -271,13 +278,15 @@ class NeRFNetwork(NeRFRenderer):
         d = self.encoder_dir(d)
         h = torch.cat([d, geo_feat], dim=-1)
         for l in range(self.num_layers_color):
+            if self.use_uncert and l + self.arc_rgb == self.num_layers_color - 1:
+                h_uncert = self.layer_uncertainty(h)
+            h = self.color_net[l](h)
             if l != self.num_layers_color - 1:
-                h = self.color_net[l](h)
                 h = F.relu(h, inplace=True)
             else:
-                h_color = self.color_net[-1](h)
-                if self.use_uncert:
-                    h_uncert = self.layer_uncertainty(h)
+                h_color = h
+        if self.use_semantic and self.arc_rgb >= self.num_layers_color:
+            h_uncert = self.layer_uncertainty(geo_feat)
         
         # sigmoid activation for rgb
         h_color = torch.sigmoid(h_color)
@@ -306,7 +315,7 @@ class NeRFNetwork(NeRFRenderer):
         # mask: [N,], bool, indicates where we actually needs to compute rgb.
 
         if not self.use_semantic:
-            raise RuntimeError("call semantic pred, but use_semantic is false!")
+            raise RuntimeError("call of semantic pred, but use_semantic is false!")
 
         if mask is not None:
             smntc = torch.zeros(mask.shape[0], self.num_semantic_classes, dtype=x.dtype, device=x.device) # [N, SC]
@@ -326,13 +335,13 @@ class NeRFNetwork(NeRFRenderer):
 
         h = geo_feat
         for l in range(self.num_layers_semantic):
+            if self.use_semantic_uncert and l + self.arc_smntc == self.num_layers_semantic - 1:
+                h_smntc_uncert = self.layer_semantic_uncertainty(h)
+            h = self.semantic_net[l](h)
             if l != self.num_layers_semantic - 1:
-                h = self.semantic_net[l](h)
                 h = F.relu(h, inplace=True)
             else:
-                h_smntc = self.semantic_net[-1](h)
-                if self.use_semantic_uncert:
-                    h_smntc_uncert = self.layer_semantic_uncertainty(h)
+                h_smntc = h
 
         if mask is not None:
             smntc[mask] = h_smntc.to(smntc.dtype) # fp16 --> fp32

@@ -61,6 +61,8 @@ if __name__ == '__main__':
     parser.add_argument('--ff', action='store_true', help="use fully-fused MLP")
     parser.add_argument('--tcnn', action='store_true', help="use TCNN backend")
     parser.add_argument('--first_encoding', type=str, choices=["hashgrid", "sphere_harmonics"], default="hashgrid", help="type of encoding for coordinates")
+    parser.add_argument('--arc_rgb', type=int, default=0, choices=[0, 1, 2, 3], help="watch network. How deep rgb uncertainty from the out")
+    parser.add_argument('--arc_smntc', type=int, default=0, choices=[0, 1, 2], help="watch network. How deep semantic uncertainty from the out")
 
     ### dataset options
     parser.add_argument('--color_space', type=str, default='srgb', help="Color space, supports (linear, srgb)")
@@ -208,8 +210,10 @@ if __name__ == '__main__':
             density_thresh=opt.density_thresh,
             bg_radius=opt.bg_radius,
             num_semantic_classes=opt.num_semantic_classes,
-            beta_min=opt.beta_min,
-            Ngen=opt.Ngen,
+            beta_min=opt.beta_min, 
+            Ngen=opt.Ngen, 
+            arc_rgb=opt.arc_rgb, 
+            arc_smntc=opt.arc_smntc, 
         )
 
         metrics = [PSNRMeter(), LPIPSMeter(device=device), SSIMMeter(device=device)]
@@ -255,6 +259,8 @@ if __name__ == '__main__':
             num_semantic_classes=num_semantic_classes,
             beta_min=opt.beta_min,
             Ngen=opt.Ngen,
+            arc_rgb=opt.arc_rgb, 
+            arc_smntc=opt.arc_smntc, 
         )
 
         print(model)

@@ -395,7 +395,7 @@ def f1_miou_lpips(miou: float, lpips: float) -> float:
     '''
 
     inv_lpips = 1.0 - lpips # must as big as possible
-    return inv_lpips * miou / (inv_lpips + miou + 1e-5)
+    return 2.0 * inv_lpips * miou / (inv_lpips + miou + 1e-5)
 
 class SSIMMeter:
     def __init__(self, device=None):
