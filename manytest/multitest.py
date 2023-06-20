@@ -172,7 +172,6 @@ def main():
         place = exp["place"]
         sequence = exp["sequence"]
         common = exp.get("common", {}) # common features
-        scene_file = os.path.join(exp_configs["scene_dir"], place)
         datapath = os.path.join(dataset_dir, place, sequence)
         if need_transforms:
             create_transforms(convert_script_path, datapath, w=w, h=h)
@@ -203,8 +202,8 @@ def main():
                 common=common, 
                 datapath=datapath,
                 place=place, sequence=sequence,
-                w=w, h=h, scene_file=scene_file,
-                group=group, i=i, project=project,
+                w=w, h=h, group=group, i=i, 
+                project=project,
             )
             if SemanticNgpRunner.already_exists(config) and not config.pop("do_run", False): # also delete do_run!
                 continue

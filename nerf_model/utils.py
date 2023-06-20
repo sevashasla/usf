@@ -1169,8 +1169,8 @@ class Trainer(object):
             all_preds = np.stack(all_preds, axis=0)
             all_rgb_shape = all_preds.shape
             all_preds_depth = np.stack(all_preds_depth, axis=0)
-            imageio.mimwrite(os.path.join(save_path, f'{name}_rgb.mp4'), all_preds, fps=10, quality=8, macro_block_size=1)
-            imageio.mimwrite(os.path.join(save_path, f'{name}_depth.mp4'), all_preds_depth, fps=10, quality=8, macro_block_size=1)
+            imageio.mimwrite(os.path.join(save_path, f'{name}_rgb.mp4'), all_preds, fps=10, quality=8, macro_block_size=2)
+            imageio.mimwrite(os.path.join(save_path, f'{name}_depth.mp4'), all_preds_depth, fps=10, quality=8, macro_block_size=2)
             to_log_videos = {
                 "video/rgb": wandb.Video(os.path.join(save_path, f'{name}_rgb.mp4'), format="mp4"),
                 "video/depth": wandb.Video(os.path.join(save_path, f'{name}_depth.mp4'), format="mp4"),
@@ -1179,7 +1179,7 @@ class Trainer(object):
                 all_preds_uncert = np.stack(all_preds_uncert, axis=0)
                 # HARDCODE += 50, prettier to watch!
                 to_video_uncert = linear_transform(all_preds_uncert) + 50
-                imageio.mimwrite(os.path.join(save_path, f'{name}_uncert.mp4'), to_video_uncert, fps=10, quality=8, macro_block_size=1)
+                imageio.mimwrite(os.path.join(save_path, f'{name}_uncert.mp4'), to_video_uncert, fps=10, quality=8, macro_block_size=2)
                 to_log_videos = {
                     **to_log_videos, 
                     "video/uncert": wandb.Video(os.path.join(save_path, f'{name}_uncert.mp4'), format="mp4"),
@@ -1189,7 +1189,7 @@ class Trainer(object):
             if self.use_semantic:
                 all_preds_smntc = np.stack(all_preds_smntc, axis=0)
                 to_video_semantic = self.sem_colormap[self.semantic_remap.remap(all_preds_smntc)]
-                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), to_video_semantic, fps=10, quality=8, macro_block_size=1)
+                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc.mp4'), to_video_semantic, fps=10, quality=8, macro_block_size=2)
                 to_log_videos = {
                     **to_log_videos, 
                     "video/semantic": wandb.Video(os.path.join(save_path, f'{name}_smntc.mp4'), format="mp4"),
@@ -1200,7 +1200,7 @@ class Trainer(object):
             if self.use_semantic_uncert:
                 all_preds_semantic_uncert = np.stack(all_preds_semantic_uncert, axis=0)
                 to_video_smntc_uncert = linear_transform(all_preds_semantic_uncert) + 50
-                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), to_video_smntc_uncert, fps=10, quality=8, macro_block_size=1)
+                imageio.mimwrite(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), to_video_smntc_uncert, fps=10, quality=8, macro_block_size=2)
                 to_log_videos = {
                     **to_log_videos, 
                     "video/semantic_uncert": wandb.Video(os.path.join(save_path, f'{name}_smntc_uncert.mp4'), format="mp4"),
@@ -1213,7 +1213,7 @@ class Trainer(object):
             concated_rgb_smntc = np.stack([all_preds, to_video_semantic], axis=2).reshape(*to_reshape)
             concated_uncert = np.stack([np.repeat(to_video_uncert, 3, -1), np.repeat(to_video_smntc_uncert, 3, -1)], axis=2).reshape(*to_reshape)
             concated = np.hstack([concated_rgb_smntc, concated_uncert]).astype(np.uint8)
-            imageio.mimwrite(os.path.join(save_path, f'{name}_concated.mp4'), concated, fps=10, quality=8, macro_block_size=1)
+            imageio.mimwrite(os.path.join(save_path, f'{name}_concated.mp4'), concated, fps=10, quality=8, macro_block_size=2)
             to_log_videos = {**to_log_videos, 
                 "video/concated": wandb.Video(os.path.join(save_path, f'{name}_concated.mp4'), format="mp4"),
             }

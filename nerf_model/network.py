@@ -151,7 +151,7 @@ class NeRFNetwork(NeRFRenderer):
         if self.use_semantic_uncert:
             self.in_smntc_uncert_dim = [self.hidden_dim_semantic, self.geo_feat_dim][arc_smntc]
             self.beta_min = beta_min
-            self.layer_semantic_uncertainty = nn.Linear(self.hidden_dim_semantic, 1)
+            self.layer_semantic_uncertainty = nn.Linear(self.in_smntc_uncert_dim, 1)
 
 
     def semantic_postprocess_prob(self, mu, sigma=None):
