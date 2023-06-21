@@ -1,4 +1,4 @@
-name: "just_try" # name of group in wandb
+name: "try_to_fix_miou" # name of group in wandb
 project: "actsrf"
 place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
 sequences: ["Sequence_1", "Sequence_2"]
@@ -29,8 +29,8 @@ experiments:
     
     # total: 900 photos
     eval_ratio: 0.125   # 112
-    train_ratio: 0.250  # 225
-    holdout_ratio: 0.01  # 45
+    train_ratio: 0.03  # 27
+    holdout_ratio: 0.595  # 535
     test_ratio: 0.250   # 225
 
     common: 
@@ -38,23 +38,63 @@ experiments:
       lr: 0.003
       bound: 5.0
       scale: 0.5
-      lambd: 0.005
       max_ray_batch: 2048
-      use_semantic: False
       use_uncert: True
+      use_semantic: True
+      use_semantic_uncert: True
+      epochs: 100
       # parameters for active learning
-      active_learning_interval: 1
-      active_learning_num: 40
-
-      # additional parameters
-      no_wandb: True
-      epochs: 3
-      video_interval: 5
-      eval_interval: 5
+      active_learning_interval: 1550
+      active_learning_num: 10
+      lambd: 0.05
 
     semantic_ngp:
-      - 
-        name: "try2"
-        do_run: True
-        omega: 0.1
-      
+      -
+        alpha_uncert: 0.1
+      -
+        alpha_uncert: 0.01
+      -
+        alpha_uncert: 0.001 
+      -
+        Ngen: 10
+      -
+        Ngen: 50
+      -
+        Ngen: 100
+      -
+        Ngen: 10
+      -
+        Ngen: 50
+      -
+        Ngen: 100
+      -
+        Ngen: 10
+      -
+        Ngen: 50
+      -
+        Ngen: 100
+      -
+        lambd: 0.01
+      -
+        lambd: 0.05
+      -
+        lambd: 0.1
+      -
+        lambd: 0.01
+      -
+        lambd: 0.05
+      -
+        lambd: 0.1    
+      -
+        lambd: 0.01
+      -
+        lambd: 0.05
+      -
+        lambd: 0.1    
+      #
+      -
+        omega: 0.0001
+      -
+        omega: 0.001
+      -
+        omega: 0.01

@@ -337,6 +337,7 @@ class NeRFNetwork(NeRFRenderer):
         for l in range(self.num_layers_semantic):
             if self.use_semantic_uncert and l + self.arc_smntc == self.num_layers_semantic - 1:
                 h_smntc_uncert = self.layer_semantic_uncertainty(h)
+                h_smntc_uncert = F.softplus(h_smntc_uncert) + self.beta_min
             h = self.semantic_net[l](h)
             if l != self.num_layers_semantic - 1:
                 h = F.relu(h, inplace=True)

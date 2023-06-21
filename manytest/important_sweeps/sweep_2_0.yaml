@@ -1,4 +1,4 @@
-name: "sweep_0_0"
+name: "sweep_2_0"
 project: "actsrf"
 
 place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
@@ -33,7 +33,7 @@ sweep_config:
     lambd: # semantic loss parameter
       distribution: "uniform"
       min: 0.001
-      max: 0.8
+      max: 0.1
 
 other_parameters:
   epochs: 1500
@@ -57,7 +57,7 @@ other_parameters:
   active_learning_num: 10
 
   # architecture
-  arc_rgb: 0
+  arc_rgb: 2
   arc_smntc: 0
 
 prepare_dataset_config:

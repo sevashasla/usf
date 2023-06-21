@@ -1,0 +1,48 @@
+name: "room525" # name of group in wandb
+project: "ngp_with_semantic_nerf"
+place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
+sequences: ["Sequence_1", "Sequence_2"]
+scene_dir: ""
+dataset_dir: "/mnt/hdd8/Datasets/NeRF_room525/"
+store_result: # where to store results
+  semantic_ngp: "/mnt/hdd8/skorokhodov_vs/results/semantic_ngp_results/"
+  torch_ngp: "/mnt/hdd8/skorokhodov_vs/results/torch-ngp_results"
+  semantic_nerf: "/mnt/hdd8/skorokhodov_vs/results/semantic_nerf_results"
+start: # start script
+  semantic_ngp: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/main_nerf.py"
+  torch_ngp: "/home/skorokhodov_vs/nerf/from_laba/torch-ngp/main_nerf.py"
+  semantic_nerf: "/home/skorokhodov_vs/nerf/from_laba/semantic_nerf/train_SSR_main_time_measure.py"
+
+convert_script_path: "" # script to convert poses to nerf format
+split_script_path: ""
+continue_on_fail: False
+gpu: 0
+
+experiments:
+### EXPERIMENT 1 ###
+  -
+      w: 2336
+      h: 1080
+      place: ""
+      sequence: ""
+      need_transforms: False
+      semantic_ngp:
+        - 
+          name: "10"
+          epochs: 1000
+          max_ray_batch: 2048
+          
+          train_ratio: 0.9
+          eval_ratio: 0.1
+          
+          downscale: 4
+          bound: 8.0
+          scale: 0.5
+          total_num_classes: 150
+          video_interval: 50
+
+          lr: 0.001
+          video_mode: 2
+          use_semantic: False
+          semantic_remap: '{"103": 0, "105": 1, "106": 2, "107": 3, "108": 4, "109": 5, "110": 6, "111": 7, "112": 8, "113": 9, "114": 10, "115": 11, "116": 12, "117": 13, "118": 14, "119": 15, "120": 16, "121": 17, "122": 18, "123": 19, "124": 20, "125": 21, "126": 22, "127": 23, "128": 24, "129": 25, "130": 26, "131": 27, "132": 28, "133": 29, "134": 30, "135": 31, "136": 32, "137": 33, "138": 34, "139": 35, "141": 36, "142": 37, "143": 38, "145": 39, "146": 40, "152": 41, "153": 42, "154": 43, "155": 44, "157": 45, "158": 46, "159": 47, "160": 48, "162": 49, "163": 50, "165": 51, "166": 52, "167": 53, "169": 54, "170": 55, "171": 56, "173": 57, "174": 58, "175": 59, "176": 60, "177": 61, "178": 62, "179": 63, "181": 64, "182": 65, "183": 66, "185": 67, "188": 68, "189": 69, "190": 70, "191": 71, "194": 72, "195": 73, "196": 74, "197": 75, "199": 76, "200": 77, "201": 78, "202": 79, "203": 80, "205": 81, "206": 82, "208": 83, "209": 84, "210": 85, "211": 86, "213": 87, "214": 88, "215": 89, "217": 90, "218": 91, "219": 92}'
+

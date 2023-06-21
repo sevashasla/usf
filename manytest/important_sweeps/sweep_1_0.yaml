@@ -1,4 +1,4 @@
-name: "sweep_0_0"
+name: "sweep_0_0_smaller_interval"
 project: "actsrf"
 
 place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
@@ -16,7 +16,7 @@ start: # start script
 
 convert_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/replica2nerf.py" # script to convert poses to nerf format
 split_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/make_split.py"
-gpu: 0
+gpu: 2
 
 count: 10 # number of sweeps
 sweep_config:
@@ -28,12 +28,12 @@ sweep_config:
   parameters:
     omega: # uncertainty parameter
       distribution: "uniform"
-      min: 0.1
-      max: 0.8
+      min: 0.2
+      max: 0.4
     lambd: # semantic loss parameter
       distribution: "uniform"
-      min: 0.001
-      max: 0.1
+      min: 0.005
+      max: 0.010
 
 other_parameters:
   epochs: 1500

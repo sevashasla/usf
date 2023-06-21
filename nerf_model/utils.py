@@ -804,7 +804,7 @@ class Trainer(object):
 
         # RGBUncertaintyLoss
         if self.use_uncert:
-            if pred_uncert.min() > 0:
+            if pred_uncert.min() > 0: # maybe bad?
                 loss_uncert = self.criterion_uncertainty(pred_rgb, gt_rgb, pred_uncert, pred_alpha)
             else:
                 loss_uncert = loss.mean()
@@ -934,7 +934,7 @@ class Trainer(object):
         else:
             loss_uncert = torch.tensor(0.0)
 
-        loss = (1 - self.omega) * loss + self.lambd * loss_smntc + self.omega * loss_uncert
+        loss = (1.0 - self.omega) * loss + self.lambd * loss_smntc + self.omega * loss_uncert
 
         return {
             "pred_rgb": pred_rgb, 
@@ -1405,18 +1405,18 @@ class Trainer(object):
                 wandb.log({"train/grad_norm": np.mean(sum_grads)})
     
             # # also count mean uncertainty
-            # with torch.no_grad():
-            #     if self.use_uncert:
-            #         uncert_mean.append(preds_uncert.mean().item())
-            #     else:
-            #         uncert_mean.append(-1.0)
+            with torch.no_grad():
+                if self.use_uncert:
+                    uncert_mean.append(preds_uncert.mean().item())
+                else:
+                    uncert_mean.append(-1.0)
 
-            #     if self.use_semantic_uncert:
-            #         uncert_semantic_mean.append(preds_uncert_smntc.mean().item())
-            #         max_mu.append(preds_smntc.max().item())
-            #     else:
-            #         uncert_semantic_mean.append(-1.0)
-            #         max_mu.append(-1.0)
+                if self.use_semantic_uncert:
+                    uncert_semantic_mean.append(preds_uncert_smntc.mean().item())
+                    max_mu.append(preds_smntc.max().item())
+                else:
+                    uncert_semantic_mean.append(-1.0)
+                    max_mu.append(-1.0)
                 
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 256.0) # TODO not hardcode?
             self.scaler.step(self.optimizer)

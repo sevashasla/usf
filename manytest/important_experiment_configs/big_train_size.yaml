@@ -1,0 +1,111 @@
+name: "big_train_size" # name of group in wandb
+project: "actsrf"
+place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
+sequences: ["Sequence_1", "Sequence_2"]
+scene_dir: "/mnt/hdd8/Datasets/Replica/semantic_info/"
+dataset_dir: "/mnt/hdd8/Datasets/Replica/"
+store_result: # where to store results
+  semantic_ngp: "/mnt/hdd8/skorokhodov_vs/results/semantic_ngp_results/"
+  torch_ngp: "/mnt/hdd8/skorokhodov_vs/results/torch-ngp_results"
+  semantic_nerf: "/mnt/hdd8/skorokhodov_vs/results/semantic_nerf_results"
+start: # start script
+  semantic_ngp: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/main_nerf.py"
+  torch_ngp: "/home/skorokhodov_vs/nerf/from_laba/torch-ngp/main_nerf.py"
+  semantic_nerf: "/home/skorokhodov_vs/nerf/from_laba/semantic_nerf/train_SSR_main_time_measure.py"
+
+convert_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/replica2nerf.py" # script to convert poses to nerf format
+split_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/make_split.py"
+continue_on_fail: False
+gpu: [0, 2]
+
+experiments:
+### EXPERIMENT 1 ###
+  # -
+  #   w: 640
+  #   h: 480
+  #   place: "room_1"
+  #   sequence: "Sequence_1"
+  #   need_transforms: True
+    
+  #   eval_ratio: 0.100
+  #   train_ratio: 0.800
+  #   holdout_ratio: 0.0
+  #   test_ratio: 0.100
+
+  #   common: 
+  #     video_mode: 2
+  #     lr: 0.001
+  #     bound: 2.33
+  #     scale: 0.33
+  #     use_semantic: True
+
+  #   semantic_ngp:
+  #     - 
+  #       lambd: 0.01
+  #       warmup: 1
+
+### EXPERIMENT 2 ###
+  -
+    w: 480
+    h: 360
+    place: "room_1"
+    sequence: "Sequence_1"
+    need_transforms: True
+    
+    eval_ratio: 0.100
+    train_ratio: 0.800
+    holdout_ratio: 0.0
+    test_ratio: 0.100
+
+    common: 
+      video_mode: 2
+      bound: 3.0
+      scale: 0.33
+      use_semantic: True
+
+    semantic_ngp:
+      # - 
+      #   lr: 0.001
+      #   lambd: 0.01
+      #   warmup_epochs: 1
+
+      # - 
+      #   lr: 0.01
+      #   lambd: 0.01
+      #   warmup_epochs: 1
+
+      - 
+        name: "no_warmup"
+        lr: 0.01
+        lambd: 0.01
+        warmup_epochs: 0.001
+
+      - 
+        name: "no_warmup_2"
+        lr: 0.001
+        lambd: 0.01
+        warmup_epochs: 0.001
+
+      - 
+        name: "no_warmup_bad_transforms"
+        lr: 0.01
+        lambd: 0.01
+        warmup_epochs: 0.001
+
+      - 
+        name: "no_warmup_bad_transforms_2"
+        lr: 0.001
+        lambd: 0.01
+        warmup_epochs: 0.001
+
+      - 
+        name: "no_warmup_bad_transforms_new"
+        lr: 0.01
+        lambd: 0.01
+        warmup_epochs: 0.001
+
+      - 
+        name: "bad_transforms_new_2"
+        lr: 0.01
+        lambd: 0.01
+        warmup_epochs: 10

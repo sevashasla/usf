@@ -1,4 +1,4 @@
-name: "sweep_0_0"
+name: "sweep_0_1"
 project: "actsrf"
 
 place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
@@ -16,11 +16,12 @@ start: # start script
 
 convert_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/replica2nerf.py" # script to convert poses to nerf format
 split_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/make_split.py"
-gpu: 2
+gpu: 0
 
 count: 10 # number of sweeps
 sweep_config:
   method: "bayes"
+  name: "sweep_0_1"
   metric:
     name: "eval/f1_miou_lpips"
     goal: "maximize"
@@ -33,7 +34,7 @@ sweep_config:
     lambd: # semantic loss parameter
       distribution: "uniform"
       min: 0.001
-      max: 0.8
+      max: 0.1
 
 other_parameters:
   epochs: 1500
@@ -58,7 +59,7 @@ other_parameters:
 
   # architecture
   arc_rgb: 0
-  arc_smntc: 0
+  arc_smntc: 1
 
 prepare_dataset_config:
   w: 640

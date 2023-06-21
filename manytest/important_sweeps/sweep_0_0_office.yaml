@@ -21,6 +21,7 @@ gpu: 2
 count: 10 # number of sweeps
 sweep_config:
   method: "bayes"
+  name: "0_0_office_0"
   metric:
     name: "eval/f1_miou_lpips"
     goal: "maximize"
@@ -33,7 +34,7 @@ sweep_config:
     lambd: # semantic loss parameter
       distribution: "uniform"
       min: 0.001
-      max: 0.8
+      max: 0.1
 
 other_parameters:
   epochs: 1500
@@ -63,7 +64,7 @@ other_parameters:
 prepare_dataset_config:
   w: 640
   h: 480
-  place: "room_0"
+  place: "office_0"
   sequence: "Sequence_1"
   need_transforms: True
 

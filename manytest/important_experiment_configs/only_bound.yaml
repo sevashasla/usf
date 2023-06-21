@@ -1,4 +1,4 @@
-name: "just_try" # name of group in wandb
+name: "only-bound" # name of group in wandb
 project: "actsrf"
 place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
 sequences: ["Sequence_1", "Sequence_2"]
@@ -15,46 +15,43 @@ start: # start script
 
 convert_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/replica2nerf.py" # script to convert poses to nerf format
 split_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/make_split.py"
-continue_on_fail: False
+continue_on_fail: True
 gpu: [0, 1, 2]
 
 experiments:
 ### EXPERIMENT 1 ###
+
   -
     w: 640
     h: 480
-    place: "room_0"
+    place: "room_1"
     sequence: "Sequence_1"
-    need_transforms: True
+    need_transforms: False
     
-    # total: 900 photos
-    eval_ratio: 0.125   # 112
-    train_ratio: 0.250  # 225
-    holdout_ratio: 0.01  # 45
-    test_ratio: 0.250   # 225
+    eval_ratio: 0.125
+    train_ratio: 0.625
+    holdout_ratio: 0.0
+    test_ratio: 0.250
 
     common: 
       video_mode: 2
-      lr: 0.003
-      bound: 5.0
-      scale: 0.5
-      lambd: 0.005
       max_ray_batch: 2048
-      use_semantic: False
-      use_uncert: True
-      # parameters for active learning
-      active_learning_interval: 1
-      active_learning_num: 40
-
-      # additional parameters
-      no_wandb: True
-      epochs: 3
-      video_interval: 5
-      eval_interval: 5
+      lr: 0.01
+      warmup_epochs: 1
 
     semantic_ngp:
       - 
-        name: "try2"
-        do_run: True
-        omega: 0.1
-      
+        bound: 4.0
+        scale: 0.5
+      - 
+        bound: 5.0
+        scale: 0.5
+      - 
+        bound: 6.0
+        scale: 0.5
+      - 
+        bound: 7.0
+        scale: 0.5
+      - 
+        bound: 8.0
+        scale: 0.5

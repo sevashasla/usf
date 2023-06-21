@@ -1,9 +1,6 @@
-name: "just_try" # name of group in wandb
+name: "apple0" # name of group in wandb
 project: "actsrf"
-place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
-sequences: ["Sequence_1", "Sequence_2"]
-scene_dir: "/mnt/hdd8/Datasets/Replica/semantic_info/"
-dataset_dir: "/mnt/hdd8/Datasets/Replica/"
+dataset_dir: "/mnt/hdd8/Datasets/nerf-sos-datasets/co3d_colmap/co3d_apple_110_13051_23361"
 store_result: # where to store results
   semantic_ngp: "/mnt/hdd8/skorokhodov_vs/results/semantic_ngp_results/"
   torch_ngp: "/mnt/hdd8/skorokhodov_vs/results/torch-ngp_results"
@@ -13,48 +10,45 @@ start: # start script
   torch_ngp: "/home/skorokhodov_vs/nerf/from_laba/torch-ngp/main_nerf.py"
   semantic_nerf: "/home/skorokhodov_vs/nerf/from_laba/semantic_nerf/train_SSR_main_time_measure.py"
 
-convert_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/replica2nerf.py" # script to convert poses to nerf format
+convert_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/llff2nerf.py" # script to convert poses to nerf format
 split_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/make_split.py"
-continue_on_fail: False
-gpu: [0, 1, 2]
+continue_on_fail: True
+gpu: [2]
 
 experiments:
 ### EXPERIMENT 1 ###
   -
     w: 640
     h: 480
-    place: "room_0"
-    sequence: "Sequence_1"
+    place: ""
+    sequence: ""
     need_transforms: True
     
-    # total: 900 photos
-    eval_ratio: 0.125   # 112
-    train_ratio: 0.250  # 225
-    holdout_ratio: 0.01  # 45
-    test_ratio: 0.250   # 225
+    # total: 202 photos
+    eval_ratio: 0.125   # 25
+    train_ratio: 0.625  # 126
+    holdout_ratio: 0.0  # 0
+    test_ratio: 0.250   # 50
 
     common: 
+      epochs: 100
+
+      downscale: 2
       video_mode: 2
       lr: 0.003
       bound: 5.0
       scale: 0.5
-      lambd: 0.005
       max_ray_batch: 2048
-      use_semantic: False
       use_uncert: True
+      use_semantic: True
+      use_semantic_uncert: True
       # parameters for active learning
-      active_learning_interval: 1
-      active_learning_num: 40
-
-      # additional parameters
-      no_wandb: True
-      epochs: 3
-      video_interval: 5
-      eval_interval: 5
+      active_learning_interval: 1550
+      active_learning_num: 10
 
     semantic_ngp:
-      - 
-        name: "try2"
+      -
+        omega: 0.3
+        lambd: 0.25
+        resume: True
         do_run: True
-        omega: 0.1
-      

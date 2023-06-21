@@ -1,4 +1,4 @@
-name: "just_try" # name of group in wandb
+name: "hashing" # name of group in wandb
 project: "actsrf"
 place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
 sequences: ["Sequence_1", "Sequence_2"]
@@ -27,11 +27,46 @@ experiments:
     sequence: "Sequence_1"
     need_transforms: True
     
-    # total: 900 photos
-    eval_ratio: 0.125   # 112
-    train_ratio: 0.250  # 225
-    holdout_ratio: 0.01  # 45
-    test_ratio: 0.250   # 225
+    eval_ratio: 0.125
+    train_ratio: 0.625
+    holdout_ratio: 0.0
+    test_ratio: 0.250
+
+    common: 
+      video_mode: 2
+      lr: 0.003
+      bound: 5.0
+      scale: 0.5
+      max_ray_batch: 2048
+
+    semantic_ngp:
+      - 
+        use_semantic: True
+        lambd: 0.005
+        first_encoding: "sphere_harmonics"
+      - 
+        use_semantic: True
+        lambd: 0.005
+        first_encoding: "hashgrid"
+      - 
+        use_semantic: False
+        first_encoding: "sphere_harmonics"
+      - 
+        use_semantic: False
+        first_encoding: "hashgrid"
+
+### EXPERIMENT 2 ###
+  -
+    w: 640
+    h: 480
+    place: "office_0"
+    sequence: "Sequence_1"
+    need_transforms: True
+    
+    eval_ratio: 0.125
+    train_ratio: 0.625
+    holdout_ratio: 0.0
+    test_ratio: 0.250
 
     common: 
       video_mode: 2
@@ -40,21 +75,19 @@ experiments:
       scale: 0.5
       lambd: 0.005
       max_ray_batch: 2048
-      use_semantic: False
-      use_uncert: True
-      # parameters for active learning
-      active_learning_interval: 1
-      active_learning_num: 40
-
-      # additional parameters
-      no_wandb: True
-      epochs: 3
-      video_interval: 5
-      eval_interval: 5
 
     semantic_ngp:
       - 
-        name: "try2"
-        do_run: True
-        omega: 0.1
-      
+        use_semantic: True
+        lambd: 0.005
+        first_encoding: "sphere_harmonics"
+      - 
+        use_semantic: True
+        lambd: 0.005
+        first_encoding: "hashgrid"
+      - 
+        use_semantic: False
+        first_encoding: "sphere_harmonics"
+      - 
+        use_semantic: False
+        first_encoding: "hashgrid"

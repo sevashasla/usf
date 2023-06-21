@@ -1,4 +1,5 @@
 name: "lambd-exp-11-04-2023" # name of group in wandb
+project: "ngp_with_semantic_nerf"
 place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
 sequences: ["Sequence_1", "Sequence_2"]
 scene_dir: "/mnt/hdd8/Datasets/Replica/semantic_info/"
@@ -12,9 +13,11 @@ start: # start script
   torch_ngp: "/home/skorokhodov_vs/nerf/from_laba/torch-ngp/main_nerf.py"
   semantic_nerf: "/home/skorokhodov_vs/nerf/from_laba/semantic_nerf/train_SSR_main_time_measure.py"
 
-convert_script_path: "/home/skorokhodov_vs/nerf/replica2nerf.py" # script to convert poses to nerf format
+convert_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/replica2nerf.py" # script to convert poses to nerf format
+split_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/make_split.py"
+
 continue_on_fail: False
-gpu: 2
+gpu: 0
 
 experiments:
 ### EXPERIMENT 1 ###
@@ -23,70 +26,88 @@ experiments:
       h: 360
       place: "room_1"
       sequence: "Sequence_1"
-      torch_ngp:
-        - 
-      semantic_nerf:
-        - 
+      need_transforms: False
+
+      common:
+        bound: 3.0
+        scale: 0.5
+        use_semantic: True
+
+      eval_ratio: 0.100
+      train_ratio: 0.900
+      holdout_ratio: 0.0
+      test_ratio: 0.0
 
       semantic_ngp:
-        - 
-          epochs: 600
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          lambd: 0.5
-          do_run: False
+        # - 
+        #   epochs: 600
+        #   max_ray_batch: 2048
+        #   num_rays: 1024
+        #   num_steps: 512
+        #   lambd: 0.5
+        #   do_run: False
 
-        - 
-          epochs: 600
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          lambd: 0.25
-          do_run: False
+        # - 
+        #   epochs: 600
+        #   max_ray_batch: 2048
+        #   num_rays: 1024
+        #   num_steps: 512
+        #   lambd: 0.25
+        #   do_run: False
 
-        - 
-          epochs: 600
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          lambd: 0.1
-          do_run: False
+        # - 
+        #   epochs: 600
+        #   max_ray_batch: 2048
+        #   num_rays: 1024
+        #   num_steps: 512
+        #   lambd: 0.1
+        #   do_run: False
 
-        - 
-          epochs: 600
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          lambd: 0.05
-          do_run: False
+        # - 
+        #   epochs: 600
+        #   max_ray_batch: 2048
+        #   num_rays: 1024
+        #   num_steps: 512
+        #   lambd: 0.05
+        #   do_run: False
         
-        - 
-          epochs: 600
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          lambd: 0.01
-          do_run: True
-          resume: True
+        # - 
+        #   epochs: 600
+        #   max_ray_batch: 2048
+        #   num_rays: 1024
+        #   num_steps: 512
+        #   lambd: 0.01
+        #   do_run: False
 
-        - 
-          epochs: 600
-          max_ray_batch: 2048
-          num_rays: 1024
-          num_steps: 512
-          lambd: 0.005
-          do_run: True
+        # - 
+        #   epochs: 600
+        #   max_ray_batch: 2048
+        #   num_rays: 1024
+        #   num_steps: 512
+        #   lambd: 0.005
+        #   do_run: False
         
-        - 
+        # - 
+        #   epochs: 600
+        #   max_ray_batch: 2048
+        #   num_rays: 1024
+        #   num_steps: 512
+        #   lambd: 0.001
+        #   do_run: False
+
+        -
+          name: "0.0005"
+          lr: 0.005
           epochs: 600
           max_ray_batch: 2048
           num_rays: 1024
           num_steps: 512
-          lambd: 0.001
+          lambd: 0.0005
           do_run: True
 
         - 
+          name: "0.0001"
+          lr: 0.005
           epochs: 600
           max_ray_batch: 2048
           num_rays: 1024
