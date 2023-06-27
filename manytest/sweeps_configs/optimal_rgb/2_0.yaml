@@ -1,0 +1,75 @@
+name: "sweep_2_0"
+project: "actsrf"
+
+place_names: ["room_0", "room_1", "room_2", "office_0", "office_1", "office_2", "office_3", "office_4"]
+sequences: ["Sequence_1", "Sequence_2"]
+scene_dir: "/mnt/hdd8/Datasets/Replica/semantic_info/"
+dataset_dir: "/mnt/hdd8/Datasets/Replica/"
+store_result: # where to store results
+  semantic_ngp: "/mnt/hdd8/skorokhodov_vs/results/semantic_ngp_results/"
+  torch_ngp: "/mnt/hdd8/skorokhodov_vs/results/torch-ngp_results"
+  semantic_nerf: "/mnt/hdd8/skorokhodov_vs/results/semantic_nerf_results"
+start: # start script
+  semantic_ngp: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/main_nerf.py"
+  torch_ngp: "/home/skorokhodov_vs/nerf/from_laba/torch-ngp/main_nerf.py"
+  semantic_nerf: "/home/skorokhodov_vs/nerf/from_laba/semantic_nerf/train_SSR_main_time_measure.py"
+
+convert_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/replica2nerf.py" # script to convert poses to nerf format
+split_script_path: "/home/skorokhodov_vs/nerf/from_laba/ngp_with_semantic_nerf/scripts/make_split.py"
+gpu: 2
+
+count: 10 # number of sweeps
+sweep_config:
+  name: "2_0"
+  method: "bayes"
+  metric:
+    name: "eval/miou"
+    goal: "maximize"
+
+  parameters:
+    omega: # uncertainty parameter
+      distribution: "log_uniform"
+      min: -5
+      max: -1
+    lambd: # semantic loss parameter
+      distribution: "log_uniform"
+      min: -4
+      max: -1
+
+other_parameters:
+  epochs: 1500
+  eval_interval: 100
+  save_interval: 100
+  video_interval: 750
+  video_mode: 2
+
+  lr: 0.003
+  bound: 5.0
+  scale: 0.5
+  max_ray_batch: 2048
+  
+  # use all uncertainty here
+  use_uncert: True
+  use_semantic: True
+  use_semantic_uncert: True
+
+  # parameters for active learning
+  active_learning_interval: 5000 # epochs = 1500 => no active learning!
+  active_learning_num: 10
+
+  # architecture
+  arc_rgb: 2
+  arc_smntc: 0
+
+prepare_dataset_config:
+  w: 640
+  h: 480
+  place: "room_0"
+  sequence: "Sequence_1"
+  need_transforms: True
+
+  # total: 900 photos
+  eval_ratio: 0.125   # 112
+  train_ratio: 0.03  # 27
+  holdout_ratio: 0.595  # 535
+  test_ratio: 0.250   # 225

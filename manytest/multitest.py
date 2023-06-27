@@ -50,7 +50,7 @@ class NeRFRunner:
             config[k] = v
 
         # other preparations
-        workspace = config.pop("name", f"{kwargs['place']}_{kwargs['sequence']}_{kwargs['w']}_{kwargs['h']}_{kwargs['i']}")
+        workspace = config.pop("name", f"{kwargs['place']}_{kwargs['i']}")
         config["workspace"] = f"{cls.store_result}/{workspace}"
         config["datapath"] = kwargs['datapath']
         config["group"] = kwargs['group']

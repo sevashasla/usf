@@ -329,6 +329,7 @@ if __name__ == '__main__':
                     wandb.init(
                         id=opt.sweep_id, 
                         resume=True,
+                        group=opt.group,
                         project=opt.project,
                         config={**vars(opt), "mode": "semantic_ngp"},
                         tags=["semantic_ngp"],

@@ -50,6 +50,7 @@ class NeRFRunner:
         config["workspace"] = os.path.join(cls.store_result, kwargs["sweep_id"])
         config["datapath"] = kwargs['datapath']
         config['project'] = kwargs['project']
+        config["group"] = kwargs['group']
 
     def prepare_launch(self):
         other_params = deepcopy(self.params)
@@ -58,6 +59,7 @@ class NeRFRunner:
         true_bool_params = [k for k, v in other_params.items() if isinstance(v, bool) and v]
         other_params = [(k, v) for k, v in other_params.items() if not isinstance(v, bool)]
 
+        
         result = f"{self.params['datapath']} "
         result = result + " ".join(map(lambda pair: f"--{pair[0]}={pair[1]}", other_params)) + " "
         result = result + " ".join(map(lambda k: f"--{k}", true_bool_params)) + " "
@@ -106,7 +108,7 @@ def make_split(python_script, datapath, train_ratio, eval_ratio, holdout_ratio, 
     os.system(f"python3 {python_script} --transform_file={transform_file} --train_ratio={train_ratio} --eval_ratio={eval_ratio} --holdout_ratio={holdout_ratio} --test_ratio={test_ratio}")
 
 
-def create_and_run(other_parameters, datapath, project, gpus):
+def create_and_run(other_parameters, datapath, project, gpus, group):
     wandb.init()
     params = wandb.config
     run_id = wandb.run.id
@@ -117,7 +119,7 @@ def create_and_run(other_parameters, datapath, project, gpus):
         config[k] = v # rewrite parameters!
 
     SemanticNgpRunner.prepare_config(
-        config, sweep_id=run_id, datapath=datapath, project=project
+        config, sweep_id=run_id, datapath=datapath, project=project, group=group
     )
     
     runner = SemanticNgpRunner(config)
@@ -173,7 +175,7 @@ def main():
             other_parameters=exp_config["other_parameters"],
             datapath=datapath,
             project=project,
-            gpus=gpus,
+            gpus=gpus, group=group,
         ), 
         count=exp_config["count"],
     )
