@@ -102,10 +102,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_semantic_uncert', action="store_true", help="use and predict the semantic labels")
 
     ### active learning
-    parser.add_argument('--active_learning_interval', type=int, default=None, help="how often to apply active learning")
-    parser.add_argument('--active_learning_num', type=int, default=4, help="how often to apply active learning")
     parser.add_argument('--Ngen', type=int, default=10, help="How many samples to generate in semantic postprocess prob")
-    parser.add_argument('--su_weight', type=float, default=0.0, help="weight of Semantic Uncertainty during active learning")
 
     ### SPECIAL PARAMETERS
     # sparse-views
@@ -181,9 +178,6 @@ if __name__ == '__main__':
 
     if opt.video_interval is None:
         opt.video_interval = opt.epochs
-
-    if opt.active_learning_interval is None:
-        opt.active_learning_interval = opt.epochs + 5
 
     if opt.use_semantic_uncert:
         opt.use_semantic = True 
@@ -275,8 +269,7 @@ if __name__ == '__main__':
         scheduler = lambda optimizer: optim.lr_scheduler.LambdaLR(
             optimizer, lambda iter: 
                 0.1 ** min(iter / iters, 1) * \
-                min(1e-3 + 1 / (opt.warmup_epochs * len(train_loader)) * iter, 1) * \
-                increase_lr(opt.active_learning_interval * len(train_loader), 1.2, iter)
+                min(1e-3 + 1 / (opt.warmup_epochs * len(train_loader)) * iter, 1)
             )
 
         metrics = [PSNRMeter(), LPIPSMeter(device=device), SSIMMeter(device=device)]

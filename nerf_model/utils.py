@@ -36,7 +36,6 @@ from torchmetrics import ConfusionMatrix
 from sklearn.metrics import confusion_matrix
 
 from .time_measure import TimeMeasure
-from .active_learning_strategies import bayesian_choose, mean_choose
 tm = TimeMeasure()
 from imgviz import label_colormap
 
@@ -394,7 +393,7 @@ def f1_miou_lpips(miou: float, lpips: float) -> float:
     it is used only for sweep!
     '''
 
-    inv_lpips = 1.0 - lpips # must as big as possible
+    inv_lpips = 1.0 - lpips # must be as big as possible
     return 2.0 * inv_lpips * miou / (inv_lpips + miou + 1e-5)
 
 class SSIMMeter:
@@ -772,7 +771,7 @@ class Trainer(object):
         pred_uncert_smntc = outputs['semantic_uncertainty_image']
         pred_uncert = outputs['uncertainty_image']
         pred_depth = outputs['depth']
-        pred_alpha = outputs['alphas']
+        pred_alpha = outputs['alphas_mean']
 
 
         # MSE loss
@@ -907,7 +906,7 @@ class Trainer(object):
             pred_smntc_probs = None
 
         if self.use_uncert:
-            pred_alpha = outputs['alphas'].reshape(B, H, W, -1)
+            pred_alpha = outputs['alphas_mean'].reshape(B, H, W, -1)
             pred_uncert = outputs['uncertainty_image'].reshape(B, H, W, 1)
         else:
             pred_alpha = None
