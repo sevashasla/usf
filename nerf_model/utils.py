@@ -118,7 +118,7 @@ class RGBUncertaintyLoss(nn.Module):
         eps = 1e-9
         first = 0.5 * torch.mean((pred_rgb[idx_no_zero] - gt_rgb[idx_no_zero]) ** 2 / (uncert[idx_no_zero] + eps)) 
         second = 0.5 * torch.mean(torch.log(uncert[idx_no_zero] + eps))
-        third = self.w * alphas[idx_no_zero].mean() + 4.0
+        third = self.w * alphas.mean() + 4.0
         return first + second + third
 
 
@@ -582,8 +582,6 @@ class Trainer(object):
         self.eval_interval = eval_interval
         self.save_eval_images = opt.save_eval_images
         self.save_interval = opt.save_interval
-        self.active_learning_interval = opt.active_learning_interval
-        self.active_learning_num = opt.active_learning_num
         self.use_checkpoint = use_checkpoint
         self.use_tensorboardX = use_tensorboardX
         self.time_stamp = time.strftime("%Y-%m-%d_%H-%M-%S")
@@ -1052,33 +1050,10 @@ class Trainer(object):
             if self.epoch % self.opt.video_interval == 0:
                 self.test(video_loader, write_video=True)
 
-            if (self.use_uncert or self.use_semantic_uncert) and self.epoch % self.active_learning_interval == 0:
-                print(f"[INFO] active learning at {epoch}")
-                self.active_learning(train_dataset, holdout_dataset)
-                print(f"[INFO] new train size {len(train_dataset):5}, new holdout size {len(holdout_dataset):5}")
-
         if test_loader.has_gt:
             self.evaluate(test_loader, mode="test")
         # and make a video
         self.test(video_loader, write_video=True)
-                
-    @torch.no_grad()
-    def active_learning(self, train_dataset, holdout_dataset):
-        if holdout_dataset is None or len(holdout_dataset) == 0:
-            return 
-        # it is new indices to extend train dataset
-        new_k = mean_choose(
-            self.opt, 
-            self.model, holdout_dataset, 
-            min(len(holdout_dataset), self.active_learning_num), # use all samples at the end
-        )
-        if not self.opt.no_wandb:
-            wandb.log({"active_learning/images": [
-                linear_transform(holdout_dataset.images[i].numpy()) \
-                    for i in new_k
-                ]})
-        train_dataset.append(holdout_dataset, new_k)
-        holdout_dataset.drop(new_k)
 
     def evaluate(self, loader, name=None, mode="eval"):
         self.evaluate_one_epoch(loader, name, mode)
