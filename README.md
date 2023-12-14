@@ -1,4 +1,4 @@
-# uSF: uSF: Learning Neural Semantic Field with Uncertainty
+# uSF: Learning Neural Semantic Field with Uncertainty
 The official implementation of the [paper](https://arxiv.org/abs/2312.08012)
 
 combination of Semantic NeRF & instant-ngp (in implementation of torch-ngp) & uncertainty.\
